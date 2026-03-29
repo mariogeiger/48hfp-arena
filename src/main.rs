@@ -11,6 +11,7 @@ struct Film {
     title: String,
     team: String,
     city: String,
+    poster_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,17 +23,72 @@ struct EloRating {
     comparisons: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct UserState {
     seen_films: Vec<usize>,
     compared_pairs: Vec<(usize, usize)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
+struct PersistentData {
+    elo_ratings: HashMap<usize, EloRating>,
+    users: HashMap<String, UserState>,
+}
+
+const DB_PATH: &str = "db.json";
+
 struct AppState {
     films: Vec<Film>,
     elo_ratings: Mutex<HashMap<usize, EloRating>>,
     users: Mutex<HashMap<String, UserState>>,
+}
+
+impl AppState {
+    fn save(&self) {
+        let data = PersistentData {
+            elo_ratings: self.elo_ratings.lock().unwrap().clone(),
+            users: self.users.lock().unwrap().clone(),
+        };
+        if let Ok(json) = serde_json::to_string(&data) {
+            let _ = std::fs::write(DB_PATH, json);
+        }
+    }
+}
+
+fn load_db(films: &[Film]) -> (HashMap<usize, EloRating>, HashMap<String, UserState>) {
+    if let Ok(content) = std::fs::read_to_string(DB_PATH) {
+        if let Ok(data) = serde_json::from_str::<PersistentData>(&content) {
+            // Merge: keep saved ratings but ensure all films have an entry
+            let mut ratings = data.elo_ratings;
+            for film in films {
+                ratings.entry(film.id).or_insert(EloRating {
+                    film_id: film.id,
+                    rating: 1500.0,
+                    wins: 0,
+                    losses: 0,
+                    comparisons: 0,
+                });
+            }
+            println!("Loaded {} ratings, {} users from {}", ratings.len(), data.users.len(), DB_PATH);
+            return (ratings, data.users);
+        }
+    }
+
+    let mut ratings = HashMap::new();
+    for film in films {
+        ratings.insert(
+            film.id,
+            EloRating {
+                film_id: film.id,
+                rating: 1500.0,
+                wins: 0,
+                losses: 0,
+                comparisons: 0,
+            },
+        );
+    }
+    println!("No existing db found, starting fresh");
+    (ratings, HashMap::new())
 }
 
 #[derive(Deserialize)]
@@ -77,11 +133,21 @@ fn parse_csv(content: &str) -> Vec<Film> {
             String::new()
         };
 
+        let poster_url = if !city.is_empty() {
+            format!(
+                "https://www.48hourfilm.com/storage/posters/48HFP {} 2025 - {} - Poster - file 1.jpg",
+                city, team
+            )
+        } else {
+            String::new()
+        };
+
         films.push(Film {
             id: i,
             title,
             team,
             city,
+            poster_url,
         });
     }
     films
@@ -103,14 +169,17 @@ async fn set_selection(
     data: web::Data<AppState>,
     payload: web::Json<SelectionPayload>,
 ) -> HttpResponse {
-    let mut users = data.users.lock().unwrap();
-    users.insert(
-        payload.user_id.clone(),
-        UserState {
-            seen_films: payload.film_ids.clone(),
-            compared_pairs: Vec::new(),
-        },
-    );
+    {
+        let mut users = data.users.lock().unwrap();
+        users.insert(
+            payload.user_id.clone(),
+            UserState {
+                seen_films: payload.film_ids.clone(),
+                compared_pairs: Vec::new(),
+            },
+        );
+    }
+    data.save();
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
@@ -206,6 +275,7 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
         }
     }
 
+    data.save();
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
@@ -221,6 +291,7 @@ async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
                 "title": film.map(|f| f.title.as_str()).unwrap_or("?"),
                 "team": film.map(|f| f.team.as_str()).unwrap_or("?"),
                 "city": film.map(|f| f.city.as_str()).unwrap_or("?"),
+                "poster_url": film.map(|f| f.poster_url.as_str()).unwrap_or(""),
                 "rating": (r.rating * 10.0).round() / 10.0,
                 "wins": r.wins,
                 "losses": r.losses,
@@ -245,24 +316,12 @@ async fn main() -> std::io::Result<()> {
     let csv_content = std::fs::read_to_string("data.csv").expect("Cannot read data.csv");
     let films = parse_csv(&csv_content);
 
-    let mut initial_ratings = HashMap::new();
-    for film in &films {
-        initial_ratings.insert(
-            film.id,
-            EloRating {
-                film_id: film.id,
-                rating: 1500.0,
-                wins: 0,
-                losses: 0,
-                comparisons: 0,
-            },
-        );
-    }
+    let (ratings, users) = load_db(&films);
 
     let state = web::Data::new(AppState {
         films,
-        elo_ratings: Mutex::new(initial_ratings),
-        users: Mutex::new(HashMap::new()),
+        elo_ratings: Mutex::new(ratings),
+        users: Mutex::new(users),
     });
 
     println!("Server running at http://localhost:4848");
