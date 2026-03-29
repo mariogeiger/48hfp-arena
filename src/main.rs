@@ -24,6 +24,22 @@ struct EloRating {
     comparisons: u32,
 }
 
+impl EloRating {
+    fn new(film_id: usize) -> Self {
+        Self {
+            film_id,
+            rating: 1500.0,
+            wins: 0,
+            losses: 0,
+            comparisons: 0,
+        }
+    }
+}
+
+fn canonical_pair(a: usize, b: usize) -> (usize, usize) {
+    if a < b { (a, b) } else { (b, a) }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct UserState {
     seen_films: Vec<usize>,
@@ -47,7 +63,7 @@ struct VoteEvent {
 }
 
 struct AppState {
-    films: Vec<Film>,
+    films: HashMap<usize, Film>,
     film_ids: HashSet<usize>,
     elo_ratings: Mutex<HashMap<usize, EloRating>>,
     users: Mutex<HashMap<String, UserState>>,
@@ -69,44 +85,28 @@ impl AppState {
     }
 }
 
-fn load_db(films: &[Film]) -> (HashMap<usize, EloRating>, HashMap<String, UserState>) {
-    if let Ok(content) = std::fs::read_to_string(DB_PATH) {
-        if let Ok(data) = serde_json::from_str::<PersistentData>(&content) {
-            let mut ratings = data.elo_ratings;
-            for film in films {
-                ratings.entry(film.id).or_insert(EloRating {
-                    film_id: film.id,
-                    rating: 1500.0,
-                    wins: 0,
-                    losses: 0,
-                    comparisons: 0,
-                });
-            }
+fn load_db(films: &HashMap<usize, Film>) -> (HashMap<usize, EloRating>, HashMap<String, UserState>) {
+    let (mut ratings, users) = std::fs::read_to_string(DB_PATH)
+        .ok()
+        .and_then(|c| serde_json::from_str::<PersistentData>(&c).ok())
+        .map(|data| {
             println!(
                 "Loaded {} ratings, {} users from {}",
-                ratings.len(),
+                data.elo_ratings.len(),
                 data.users.len(),
                 DB_PATH
             );
-            return (ratings, data.users);
-        }
-    }
+            (data.elo_ratings, data.users)
+        })
+        .unwrap_or_else(|| {
+            println!("No existing db found, starting fresh");
+            (HashMap::new(), HashMap::new())
+        });
 
-    let mut ratings = HashMap::new();
-    for film in films {
-        ratings.insert(
-            film.id,
-            EloRating {
-                film_id: film.id,
-                rating: 1500.0,
-                wins: 0,
-                losses: 0,
-                comparisons: 0,
-            },
-        );
+    for &id in films.keys() {
+        ratings.entry(id).or_insert_with(|| EloRating::new(id));
     }
-    println!("No existing db found, starting fresh");
-    (ratings, HashMap::new())
+    (ratings, users)
 }
 
 #[derive(Deserialize)]
@@ -180,7 +180,8 @@ fn calculate_elo(winner_rating: f64, loser_rating: f64, k: f64) -> (f64, f64) {
 }
 
 async fn get_films(data: web::Data<AppState>) -> HttpResponse {
-    HttpResponse::Ok().json(&data.films)
+    let films: Vec<&Film> = data.films.values().collect();
+    HttpResponse::Ok().json(films)
 }
 
 async fn set_selection(
@@ -219,11 +220,7 @@ async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> 
     let mut remaining = Vec::new();
     for i in 0..seen.len() {
         for j in (i + 1)..seen.len() {
-            let pair = if seen[i] < seen[j] {
-                (seen[i], seen[j])
-            } else {
-                (seen[j], seen[i])
-            };
+            let pair = canonical_pair(seen[i], seen[j]);
             if !user.compared_pairs.contains(&pair) {
                 remaining.push(pair);
             }
@@ -237,8 +234,8 @@ async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> 
     let mut rng = rand::thread_rng();
     let &(a, b) = remaining.choose(&mut rng).unwrap();
 
-    let film_a = data.films.iter().find(|f| f.id == a).unwrap();
-    let film_b = data.films.iter().find(|f| f.id == b).unwrap();
+    let film_a = &data.films[&a];
+    let film_b = &data.films[&b];
 
     HttpResponse::Ok().json(serde_json::json!({
         "done": false,
@@ -258,12 +255,7 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
             .json(serde_json::json!({"error": "invalid film ids"}));
     }
 
-    // Check for duplicate vote
-    let pair = if payload.winner_id < payload.loser_id {
-        (payload.winner_id, payload.loser_id)
-    } else {
-        (payload.loser_id, payload.winner_id)
-    };
+    let pair = canonical_pair(payload.winner_id, payload.loser_id);
 
     {
         let users = data.users.lock().unwrap();
@@ -279,23 +271,11 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
         let mut ratings = data.elo_ratings.lock().unwrap();
         let winner_rating = ratings
             .entry(payload.winner_id)
-            .or_insert(EloRating {
-                film_id: payload.winner_id,
-                rating: 1500.0,
-                wins: 0,
-                losses: 0,
-                comparisons: 0,
-            })
+            .or_insert_with(|| EloRating::new(payload.winner_id))
             .rating;
         let loser_rating = ratings
             .entry(payload.loser_id)
-            .or_insert(EloRating {
-                film_id: payload.loser_id,
-                rating: 1500.0,
-                wins: 0,
-                losses: 0,
-                comparisons: 0,
-            })
+            .or_insert_with(|| EloRating::new(payload.loser_id))
             .rating;
 
         let (new_winner, new_loser) = calculate_elo(winner_rating, loser_rating, 32.0);
@@ -320,18 +300,10 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
 
     data.save();
 
-    let winner_title = data
-        .films
-        .iter()
-        .find(|f| f.id == payload.winner_id)
-        .map(|f| f.title.clone())
-        .unwrap_or_default();
-    let loser_title = data
-        .films
-        .iter()
-        .find(|f| f.id == payload.loser_id)
-        .map(|f| f.title.clone())
-        .unwrap_or_default();
+    let winner_title = data.films.get(&payload.winner_id)
+        .map(|f| f.title.clone()).unwrap_or_default();
+    let loser_title = data.films.get(&payload.loser_id)
+        .map(|f| f.title.clone()).unwrap_or_default();
     let _ = data.vote_tx.send(VoteEvent {
         user_id: payload.user_id.clone(),
         winner_title,
@@ -371,7 +343,7 @@ async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
         .values()
         .filter(|r| r.comparisons > 0)
         .map(|r| {
-            let film = data.films.iter().find(|f| f.id == r.film_id);
+            let film = data.films.get(&r.film_id);
             serde_json::json!({
                 "film_id": r.film_id,
                 "title": film.map(|f| f.title.as_str()).unwrap_or("?"),
@@ -400,8 +372,11 @@ async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let csv_content = std::fs::read_to_string("data.csv").expect("Cannot read data.csv");
-    let films = parse_csv(&csv_content);
-    let film_ids: HashSet<usize> = films.iter().map(|f| f.id).collect();
+    let films: HashMap<usize, Film> = parse_csv(&csv_content)
+        .into_iter()
+        .map(|f| (f.id, f))
+        .collect();
+    let film_ids: HashSet<usize> = films.keys().copied().collect();
 
     let (ratings, users) = load_db(&films);
     let (vote_tx, _) = broadcast::channel::<VoteEvent>(64);
