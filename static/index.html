@@ -33,22 +33,22 @@
   /* PAGE 1: SELECTION */
   #page-select { padding: 0; }
   .select-header {
-    padding: 20px 16px 12px; background: #111118;
+    padding: 10px 16px 8px; background: #111118;
     position: sticky; top: 47px; z-index: 50;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   }
-  .select-header h1 { font-size: 22px; margin-bottom: 6px; color: #fff; }
-  .select-header p { font-size: 13px; color: #888; margin-bottom: 12px; }
+  .select-header p { font-size: 12px; color: #888; width: 100%; }
   .search-box {
-    width: 100%; padding: 10px 14px; background: #1a1a24; border: 1px solid #333;
+    flex: 1; min-width: 0; padding: 8px 12px; background: #1a1a24; border: 1px solid #333;
     border-radius: 8px; color: #fff; font-size: 14px; outline: none;
   }
   .search-box:focus { border-color: #7c6aff; }
   .select-actions {
-    display: flex; gap: 8px; margin-top: 10px;
+    display: flex; gap: 6px;
   }
   .select-actions button {
-    padding: 6px 14px; border-radius: 6px; border: 1px solid #333;
-    background: #1a1a24; color: #aaa; font-size: 12px; cursor: pointer;
+    padding: 8px 10px; border-radius: 6px; border: 1px solid #333;
+    background: #1a1a24; color: #aaa; font-size: 11px; cursor: pointer; white-space: nowrap;
   }
   .select-actions button:hover { border-color: #7c6aff; color: #fff; }
 
@@ -240,11 +240,10 @@
 <!-- PAGE 1: SELECT -->
 <div id="page-select" class="page active">
   <div class="select-header">
-    <h1>Which films did you see?</h1>
-    <p>Select the films you remember watching, then you'll compare them head-to-head.</p>
+    <p>Select the films you remember, then compare them head-to-head.</p>
     <input class="search-box" type="text" placeholder="Search films, teams, cities..." oninput="filterFilms(this.value)">
     <div class="select-actions">
-      <button onclick="selectAll()">Select All Visible</button>
+      <button onclick="selectAll()">Select All</button>
       <button onclick="deselectAll()">Deselect All</button>
     </div>
   </div>
