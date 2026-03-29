@@ -41,6 +41,7 @@ const DB_TMP_PATH: &str = "db.json.tmp";
 
 #[derive(Debug, Clone, Serialize)]
 struct VoteEvent {
+    user_id: String,
     winner_title: String,
     loser_title: String,
 }
@@ -332,6 +333,7 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
         .map(|f| f.title.clone())
         .unwrap_or_default();
     let _ = data.vote_tx.send(VoteEvent {
+        user_id: payload.user_id.clone(),
         winner_title,
         loser_title,
     });

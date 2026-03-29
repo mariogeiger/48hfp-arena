@@ -586,6 +586,7 @@ function initVoteStream() {
   const es = new EventSource('/api/vote/stream');
   es.onmessage = (e) => {
     const data = JSON.parse(e.data);
+    if (data.user_id === USER_ID) return;
     showVoteToast(data.winner_title, data.loser_title);
   };
   es.onerror = () => {
