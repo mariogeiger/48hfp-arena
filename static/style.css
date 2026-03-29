@@ -819,3 +819,15 @@ body {
     break-inside: avoid;
   }
 }
+
+@media (min-width: 900px) {
+  .film-list {
+    columns: 3;
+  }
+}
+
+@media (min-width: 1200px) {
+  .film-list {
+    columns: 4;
+  }
+}
