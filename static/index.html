@@ -29,6 +29,12 @@
   }
   .nav button.active { color: #EAB32D; border-bottom-color: #EAB32D; }
   .nav button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .nav-source {
+    display: flex; align-items: center; padding: 0 12px;
+    color: #5a4a6a; font-size: 11px; text-decoration: none;
+    border-bottom: 3px solid transparent;
+  }
+  .nav-source:hover { color: #8a7a96; }
 
   /* PAGE 1: SELECTION */
   #page-select { padding: 0; }
@@ -331,6 +337,7 @@
   <button id="nav-swipe" onclick="showPage('swipe')">Compare</button>
   <button id="nav-board" onclick="showPage('board')">Leaderboard</button>
   <button id="nav-stats" onclick="showPage('stats')">Stats</button>
+  <a href="https://github.com/mariogeiger/48hfp-arena" target="_blank" class="nav-source"><svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
 </nav>
 
 <!-- PAGE 1: SELECT -->
@@ -531,8 +538,8 @@ function renderPair(a, b) {
   container.innerHTML = `
     <div>
       <div class="swipe-card" id="swipe-card">
-        <div class="swipe-overlay left-o" id="overlay-left">${esc(b.title)}</div>
-        <div class="swipe-overlay right-o" id="overlay-right">${esc(a.title)}</div>
+        <div class="swipe-overlay left-o" id="overlay-left">${esc(a.title)}</div>
+        <div class="swipe-overlay right-o" id="overlay-right">${esc(b.title)}</div>
         <div class="vs-label">VS</div>
         <div class="swipe-pair">
           <div class="swipe-film">
@@ -604,8 +611,8 @@ function setupSwipe() {
       card.style.transform = `translateX(${goRight ? 400 : -400}px) rotate(${goRight ? 20 : -20}deg)`;
       card.style.opacity = '0';
       setTimeout(() => {
-        if (goRight) castVote(currentPair.a.id, currentPair.b.id);
-        else castVote(currentPair.b.id, currentPair.a.id);
+        if (goRight) castVote(currentPair.b.id, currentPair.a.id);
+        else castVote(currentPair.a.id, currentPair.b.id);
       }, 200);
     } else {
       card.style.transform = '';
@@ -616,8 +623,8 @@ function setupSwipe() {
   function onMouseDown(e) { onStart(e.clientX); }
   function onTouchStart(e) { onStart(e.touches[0].clientX); }
   function onKey(e) {
-    if (e.key === 'ArrowRight') castVote(currentPair.a.id, currentPair.b.id);
-    else if (e.key === 'ArrowLeft') castVote(currentPair.b.id, currentPair.a.id);
+    if (e.key === 'ArrowLeft') castVote(currentPair.a.id, currentPair.b.id);
+    else if (e.key === 'ArrowRight') castVote(currentPair.b.id, currentPair.a.id);
   }
 
   card.addEventListener('mousedown', onMouseDown);
