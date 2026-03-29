@@ -38,8 +38,14 @@ function barRow(label, value, fraction) {
 
 // -- Init --
 async function init() {
-  const res = await fetch('/api/films');
-  allFilms = await res.json();
+  const [filmsRes, boardRes] = await Promise.all([
+    fetch('/api/films'),
+    fetch('/api/leaderboard'),
+  ]);
+  allFilms = await filmsRes.json();
+  const board = await boardRes.json();
+  const rankById = new Map(board.map((item, i) => [item.id, i]));
+  allFilms.sort((a, b) => (rankById.get(a.id) ?? Infinity) - (rankById.get(b.id) ?? Infinity));
   renderFilmList(allFilms);
   updateSelectionStatus();
   if (selectedIds.size >= 2) saveSelection();
@@ -51,6 +57,7 @@ function showPage(page) {
   document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
   document.getElementById(`page-${page}`).classList.add('active');
   document.getElementById(`nav-${page}`).classList.add('active');
+  location.hash = page;
 
   const loaders = { swipe: loadPair, board: loadLeaderboard, stats: loadStats };
   if (loaders[page]) loaders[page]();
@@ -352,4 +359,7 @@ function initVoteStream() {
 }
 
 initVoteStream();
-init();
+init().then(() => {
+  const page = location.hash.slice(1);
+  if (page && document.getElementById(`page-${page}`)) showPage(page);
+});
