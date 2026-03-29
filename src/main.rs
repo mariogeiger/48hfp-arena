@@ -21,7 +21,6 @@ struct BtRating {
     film_id: usize,
     /// Bradley-Terry strength parameter β (normalized so geometric mean of active films = 1).
     score: f64,
-    wins: u32,
     comparisons: u32,
     /// Pairwise win counts: film_id → number of times this film beat that film.
     wins_against: HashMap<usize, u32>,
@@ -32,13 +31,15 @@ impl BtRating {
         Self {
             film_id,
             score: 1.0,
-            wins: 0,
             comparisons: 0,
             wins_against: HashMap::new(),
         }
     }
+    fn wins(&self) -> u32 {
+        self.wins_against.values().sum()
+    }
     fn losses(&self) -> u32 {
-        self.comparisons - self.wins
+        self.comparisons - self.wins()
     }
 }
 
@@ -56,7 +57,6 @@ struct LastVote {
 struct UserState {
     seen_films: Vec<usize>,
     compared_pairs: HashSet<(usize, usize)>,
-    #[serde(skip)]
     vote_history: Vec<LastVote>,
 }
 
@@ -154,14 +154,14 @@ fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
 
     // Films with 0 wins cannot be estimated by MLE (β → 0); pin them to a small floor.
     for &id in &active_ids {
-        if ratings[&id].wins == 0 {
+        if ratings[&id].wins() == 0 {
             ratings.get_mut(&id).unwrap().score = 1e-6;
         }
     }
 
     let ranked_ids: Vec<usize> = active_ids.iter()
         .copied()
-        .filter(|&id| ratings[&id].wins > 0)
+        .filter(|&id| ratings[&id].wins() > 0)
         .collect();
 
     if ranked_ids.is_empty() {
@@ -181,7 +181,7 @@ fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
         let mut max_rel_change = 0.0_f64;
 
         for &i in &ranked_ids {
-            let w_i = ratings[&i].wins as f64;
+            let w_i = ratings[&i].wins() as f64;
             let score_i = old_scores[idx[&i]];
 
             let denom: f64 = active_ids.iter()
@@ -355,7 +355,6 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
         let mut ratings = data.bt_ratings.lock().unwrap();
 
         let w = ratings.entry(payload.winner_id).or_insert_with(|| BtRating::new(payload.winner_id));
-        w.wins += 1;
         w.comparisons += 1;
         *w.wins_against.entry(payload.loser_id).or_insert(0) += 1;
 
@@ -416,7 +415,6 @@ async fn undo(data: web::Data<AppState>, payload: web::Json<UndoPayload>) -> Htt
         let mut ratings = data.bt_ratings.lock().unwrap();
 
         if let Some(w) = ratings.get_mut(&last_vote.winner_id) {
-            w.wins = w.wins.saturating_sub(1);
             w.comparisons = w.comparisons.saturating_sub(1);
             let entry = w.wins_against.entry(last_vote.loser_id).or_insert(0);
             *entry = entry.saturating_sub(1);
@@ -537,7 +535,7 @@ async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
                 "city": film.map(|f| f.city.as_str()).unwrap_or("?"),
                 "poster_url": film.map(|f| f.poster_url.as_str()).unwrap_or(""),
                 "rating": (bt_score_to_display(r.score) * 10.0).round() / 10.0,
-                "wins": r.wins,
+                "wins": r.wins(),
                 "losses": r.losses(),
                 "comparisons": r.comparisons,
             })
