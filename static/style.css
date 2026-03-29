@@ -197,7 +197,7 @@ body {
 .board-title { font-size: 15px; font-weight: 600; color: #fff; }
 .board-meta { font-size: 12px; color: #8a7a96; margin-top: 2px; }
 .board-stats { text-align: right; flex-shrink: 0; }
-.board-elo { font-size: 18px; font-weight: 700; color: #EAB32D; }
+.board-score { font-size: 18px; font-weight: 700; color: #EAB32D; }
 .board-record { font-size: 11px; color: #8a7a96; margin-top: 2px; }
 .board-empty { text-align: center; padding: 60px 20px; color: #8a7a96; }
 .board-empty h3 { color: #ccc; margin-bottom: 8px; }
