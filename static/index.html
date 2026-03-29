@@ -12,7 +12,7 @@
   <button id="nav-select" class="active" onclick="showPage('select')">Select Films</button>
   <button id="nav-swipe" onclick="showPage('swipe')">Compare</button>
   <button id="nav-board" onclick="showPage('board')">Leaderboard</button>
-  <button id="nav-stats" onclick="showPage('stats')">Stats</button>
+  <button id="nav-more" onclick="showPage('more')">More</button>
   <a href="https://github.com/mariogeiger/48hfp-arena" target="_blank" class="nav-source"><svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
 </nav>
 
@@ -44,13 +44,35 @@
   <div class="board-list" id="board-list"></div>
 </div>
 
-<!-- PAGE 4: STATS -->
-<div id="page-stats" class="page">
+<!-- PAGE 4: MORE -->
+<div id="page-more" class="page">
   <div class="page-header">
-    <h1>Statistics</h1>
-    <p>Voting activity and participation numbers</p>
+    <h1>More</h1>
+    <p>Voting stats, your votes matrix, and global results</p>
   </div>
   <div id="stats-content"></div>
+
+  <div class="matrix-section" id="user-matrix-section">
+    <h3>Your Vote Matrix <button class="matrix-zoom-btn" onclick="openMatrixModal('user-matrix')">&#x26F6;</button></h3>
+    <p class="matrix-hint">Tap empty cell to vote (row wins). Tap filled cell to remove vote.</p>
+    <div class="matrix-scroll-wrapper">
+      <div id="user-matrix"></div>
+    </div>
+  </div>
+
+  <div class="matrix-section" id="global-matrix-section">
+    <h3>Global Win Matrix <button class="matrix-zoom-btn" onclick="openMatrixModal('global-matrix')">&#x26F6;</button></h3>
+    <p class="matrix-hint">Aggregate wins across all voters. Read only.</p>
+    <div class="matrix-scroll-wrapper">
+      <div id="global-matrix"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Fullscreen zoom modal -->
+<div class="matrix-modal" id="matrix-modal">
+  <button class="matrix-modal-close" onclick="closeMatrixModal()">&times;</button>
+  <div class="matrix-modal-content" id="matrix-modal-content"></div>
 </div>
 
 <div class="vote-toast-container" id="toast-container"></div>

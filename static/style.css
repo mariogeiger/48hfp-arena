@@ -202,8 +202,8 @@ body {
 .board-empty { text-align: center; padding: 60px 20px; color: #8a7a96; }
 .board-empty h3 { color: #ccc; margin-bottom: 8px; }
 
-/* PAGE 4: STATS */
-#page-stats { padding: 0; }
+/* PAGE 4: MORE */
+#page-more { padding: 0; }
 .stats-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px; padding: 16px;
@@ -234,6 +234,80 @@ body {
   height: 100%; background: #6B2E81; border-radius: 4px; transition: width 0.5s ease;
 }
 .stats-bar-value { flex: 0 0 36px; text-align: right; color: #8a7a96; font-size: 12px; }
+
+/* MATRIX */
+.matrix-section { padding: 16px; }
+.matrix-section h3 {
+  font-size: 15px; color: #ccc; margin-bottom: 4px;
+  display: flex; align-items: center; gap: 8px;
+  padding-top: 8px; border-top: 1px solid #2a1a35;
+}
+.matrix-hint { font-size: 11px; color: #8a7a96; margin-bottom: 8px; }
+.matrix-scroll-wrapper {
+  overflow: auto; -webkit-overflow-scrolling: touch;
+  max-height: 70vh; border: 1px solid #2a1a35; border-radius: 8px;
+  background: #1a0f22;
+}
+.matrix-table { border-collapse: collapse; font-size: 10px; }
+.matrix-table th, .matrix-table td {
+  padding: 2px 4px; text-align: center; white-space: nowrap;
+  border: 1px solid #2a1a35;
+}
+.matrix-corner {
+  font-size: 9px; color: #8a7a96; font-weight: 400; white-space: nowrap;
+  position: sticky; left: 0; background: #1a0f22; z-index: 3;
+}
+.matrix-col-header {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  font-size: 9px; color: #8a7a96; max-width: 28px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.matrix-row-header {
+  font-size: 9px; color: #8a7a96; text-align: right;
+  max-width: 80px; overflow: hidden; text-overflow: ellipsis;
+  position: sticky; left: 0; background: #1a0f22; z-index: 2;
+}
+.matrix-cell {
+  width: 28px; height: 28px; min-width: 28px;
+  font-size: 10px; font-weight: 700; cursor: default;
+}
+.matrix-diag { background: #0d0815; }
+.matrix-win { background: #1a4d2e; color: #4ade80; cursor: pointer; }
+.matrix-loss { background: #4d1a1a; color: #f87171; cursor: pointer; }
+.matrix-legacy { background: #3d3520; color: #d4a844; cursor: pointer; }
+.matrix-empty-cell { background: transparent; cursor: pointer; }
+.matrix-empty-cell:hover { background: #2a1a35; }
+.matrix-favors-row { background: #1a4d2e; color: #4ade80; }
+.matrix-favors-col { background: #4d1a1a; color: #f87171; }
+.matrix-neutral { background: #2a2a35; color: #8a7a96; }
+.matrix-empty { color: #8a7a96; padding: 20px; text-align: center; }
+.matrix-zoom-btn {
+  background: none; border: 1px solid #3d2a4d; color: #8a7a96;
+  padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;
+}
+.matrix-zoom-btn:hover { border-color: #EAB32D; color: #fff; }
+
+/* FULLSCREEN MATRIX MODAL */
+.matrix-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.95); z-index: 1000;
+  overflow: hidden; touch-action: none;
+}
+.matrix-modal.active { display: flex; align-items: center; justify-content: center; }
+.matrix-modal-close {
+  position: absolute; top: 12px; right: 12px;
+  background: #2a1a35; border: 1px solid #3d2a4d;
+  color: #fff; font-size: 24px; width: 40px; height: 40px;
+  border-radius: 50%; cursor: pointer; z-index: 1001;
+  display: flex; align-items: center; justify-content: center;
+}
+.matrix-modal-close:hover { border-color: #EAB32D; }
+.matrix-modal-content {
+  overflow: hidden; max-width: 100vw; max-height: 100vh;
+}
+.matrix-modal-content .matrix-table { font-size: 12px; }
+.matrix-modal-content .matrix-cell { width: 32px; height: 32px; min-width: 32px; }
+.matrix-modal-content .matrix-row-header { position: static; }
 
 /* VOTE NOTIFICATIONS */
 .vote-toast-container {

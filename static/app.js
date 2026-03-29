@@ -59,7 +59,7 @@ function showPage(page) {
   document.getElementById(`nav-${page}`).classList.add('active');
   location.hash = page;
 
-  const loaders = { swipe: loadPair, board: loadLeaderboard, stats: loadStats };
+  const loaders = { swipe: loadPair, board: loadLeaderboard, more: loadMore };
   if (loaders[page]) loaders[page]();
 }
 
@@ -304,7 +304,12 @@ async function loadLeaderboard() {
   `).join('');
 }
 
-// -- PAGE 4: Stats --
+// -- PAGE 4: More --
+async function loadMore() {
+  await loadStats();
+  await Promise.all([loadUserMatrix(), loadGlobalMatrix()]);
+}
+
 async function loadStats() {
   const res = await fetch('/api/stats');
   const s = await res.json();
@@ -341,6 +346,254 @@ async function loadStats() {
   `;
 }
 
+// -- Matrix Rendering --
+function shortTitle(t) {
+  return t.length > 12 ? t.slice(0, 11) + '\u2026' : t;
+}
+
+async function loadUserMatrix() {
+  const res = await fetch(`/api/user-matrix?user_id=${USER_ID}&_=${Date.now()}`);
+  const data = await res.json();
+  const container = document.getElementById('user-matrix');
+  if (data.films.length === 0) {
+    container.innerHTML = '<p class="matrix-empty">No votes yet. Start comparing!</p>';
+    return;
+  }
+  container.innerHTML = renderUserMatrix(data.films, data.votes, data.legacy_votes);
+}
+
+async function loadGlobalMatrix() {
+  const res = await fetch(`/api/global-matrix?_=${Date.now()}`);
+  const data = await res.json();
+  const container = document.getElementById('global-matrix');
+  if (data.films.length === 0) {
+    container.innerHTML = '<p class="matrix-empty">No data yet.</p>';
+    return;
+  }
+  container.innerHTML = renderGlobalMatrix(data.films, data.wins);
+}
+
+function renderUserMatrix(films, votes, legacyVotes) {
+  const voteMap = new Map();
+  for (const v of votes) {
+    const a = Math.min(v.film_a, v.film_b), b = Math.max(v.film_a, v.film_b);
+    voteMap.set(`${a},${b}`, v.winner);
+  }
+  const legacySet = new Set();
+  for (const v of (legacyVotes || [])) {
+    const a = Math.min(v.film_a, v.film_b), b = Math.max(v.film_a, v.film_b);
+    legacySet.add(`${a},${b}`);
+  }
+
+  let html = '<table class="matrix-table"><thead><tr><th class="matrix-corner">\u2193 beat \u2192</th>';
+  for (const f of films) {
+    html += `<th class="matrix-col-header" title="${esc(f.title)}">${esc(shortTitle(f.title))}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (const row of films) {
+    html += `<tr><td class="matrix-row-header" title="${esc(row.title)}">${esc(shortTitle(row.title))}</td>`;
+    for (const col of films) {
+      if (row.id === col.id) { html += '<td class="matrix-cell matrix-diag"></td>'; continue; }
+      const a = Math.min(row.id, col.id), b = Math.max(row.id, col.id);
+      const key = `${a},${b}`;
+      const winner = voteMap.get(key);
+      const isLegacy = legacySet.has(key);
+
+      let cls = 'matrix-cell', content = '', click = '';
+
+      if (winner !== undefined) {
+        if (winner === row.id) { cls += ' matrix-win'; content = 'W'; }
+        else { cls += ' matrix-loss'; content = 'L'; }
+        // Click to remove vote
+        const uw = winner === row.id ? row.id : col.id;
+        const ul = winner === row.id ? col.id : row.id;
+        click = ` onclick="matrixUnvote(${uw},${ul})"`;
+      } else if (isLegacy) {
+        cls += ' matrix-legacy';
+        content = '?';
+        click = ` onclick="matrixVote(${row.id},${col.id})"`;
+      } else {
+        cls += ' matrix-empty-cell';
+        click = ` onclick="matrixVote(${row.id},${col.id})"`;
+      }
+
+      html += `<td class="${cls}"${click} title="${esc(row.title)} vs ${esc(col.title)}">${content}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderGlobalMatrix(films, wins) {
+  const winMap = new Map();
+  for (const w of wins) winMap.set(`${w.winner},${w.loser}`, w.count);
+
+  let html = '<table class="matrix-table"><thead><tr><th class="matrix-corner">\u2193 beat \u2192</th>';
+  for (const f of films) {
+    html += `<th class="matrix-col-header" title="${esc(f.title)}">${esc(shortTitle(f.title))}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (const row of films) {
+    html += `<tr><td class="matrix-row-header" title="${esc(row.title)}">${esc(shortTitle(row.title))}</td>`;
+    for (const col of films) {
+      if (row.id === col.id) { html += '<td class="matrix-cell matrix-diag"></td>'; continue; }
+      const wRC = winMap.get(`${row.id},${col.id}`) || 0;
+      const wCR = winMap.get(`${col.id},${row.id}`) || 0;
+      const total = wRC + wCR;
+
+      let cls = 'matrix-cell';
+      let content = '';
+      if (total > 0) {
+        const rate = wRC / total;
+        if (rate > 0.5) cls += ' matrix-favors-row';
+        else if (rate < 0.5) cls += ' matrix-favors-col';
+        else cls += ' matrix-neutral';
+        content = `${wRC}`;
+      }
+      html += `<td class="${cls}" title="${esc(row.title)}: ${wRC}W / ${esc(col.title)}: ${wCR}W">${content}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  return html;
+}
+
+async function matrixUnvote(winnerId, loserId) {
+  await fetch('/api/undo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: USER_ID, winner_id: winnerId, loser_id: loserId }),
+  });
+  await Promise.all([loadUserMatrix(), loadGlobalMatrix()]);
+  refreshMatrixModal();
+}
+
+async function matrixVote(winnerId, loserId) {
+  await fetch('/api/vote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: USER_ID, winner_id: winnerId, loser_id: loserId }),
+  });
+  await Promise.all([loadUserMatrix(), loadGlobalMatrix()]);
+  refreshMatrixModal();
+}
+
+// -- Fullscreen Matrix Modal --
+let zoomCleanup = null;
+let modalSourceId = null;
+
+function openMatrixModal(sourceId) {
+  const modal = document.getElementById('matrix-modal');
+  const content = document.getElementById('matrix-modal-content');
+  const source = document.getElementById(sourceId);
+  if (!source) return;
+
+  modalSourceId = sourceId;
+  content.innerHTML = source.innerHTML;
+  modal.classList.add('active');
+  document.body.style.overflow = 'hidden';
+  setupPinchZoom(content);
+}
+
+function refreshMatrixModal() {
+  if (!modalSourceId) return;
+  const modal = document.getElementById('matrix-modal');
+  if (!modal.classList.contains('active')) return;
+  const source = document.getElementById(modalSourceId);
+  if (!source) return;
+  const content = document.getElementById('matrix-modal-content');
+  content.innerHTML = source.innerHTML;
+}
+
+function closeMatrixModal() {
+  const modal = document.getElementById('matrix-modal');
+  modal.classList.remove('active');
+  document.body.style.overflow = '';
+  modalSourceId = null;
+  if (zoomCleanup) { zoomCleanup(); zoomCleanup = null; }
+  const content = document.getElementById('matrix-modal-content');
+  content.innerHTML = '';
+}
+
+function setupPinchZoom(container) {
+  let scale = 1, tx = 0, ty = 0;
+  let lastDist = 0, lastCX = 0, lastCY = 0;
+  let pinching = false, panning = false;
+  let panSX = 0, panSY = 0;
+
+  function apply() {
+    const inner = container.firstElementChild;
+    if (inner) {
+      inner.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+      inner.style.transformOrigin = '0 0';
+    }
+  }
+
+  function onTS(e) {
+    if (e.touches.length === 2) {
+      pinching = true;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastDist = Math.hypot(dx, dy);
+      lastCX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      lastCY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      e.preventDefault();
+    } else if (e.touches.length === 1 && scale > 1) {
+      panning = true;
+      panSX = e.touches[0].clientX - tx;
+      panSY = e.touches[0].clientY - ty;
+    }
+  }
+  function onTM(e) {
+    if (pinching && e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      scale = Math.max(0.5, Math.min(8, scale * (dist / lastDist)));
+      tx += cx - lastCX;
+      ty += cy - lastCY;
+      lastDist = dist; lastCX = cx; lastCY = cy;
+      apply(); e.preventDefault();
+    } else if (panning && e.touches.length === 1) {
+      tx = e.touches[0].clientX - panSX;
+      ty = e.touches[0].clientY - panSY;
+      apply(); e.preventDefault();
+    }
+  }
+  function onTE(e) {
+    if (e.touches.length < 2) pinching = false;
+    if (e.touches.length < 1) panning = false;
+  }
+  function onWheel(e) {
+    e.preventDefault();
+    const rect = container.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const ns = Math.max(0.5, Math.min(8, scale * delta));
+    tx = mx - (mx - tx) * (ns / scale);
+    ty = my - (my - ty) * (ns / scale);
+    scale = ns;
+    apply();
+  }
+
+  container.addEventListener('touchstart', onTS, { passive: false });
+  container.addEventListener('touchmove', onTM, { passive: false });
+  container.addEventListener('touchend', onTE);
+  container.addEventListener('wheel', onWheel, { passive: false });
+
+  zoomCleanup = () => {
+    container.removeEventListener('touchstart', onTS);
+    container.removeEventListener('touchmove', onTM);
+    container.removeEventListener('touchend', onTE);
+    container.removeEventListener('wheel', onWheel);
+  };
+}
+
 // -- Vote Notifications (SSE) --
 function initVoteStream() {
   const es = new EventSource('/api/vote/stream');
@@ -359,6 +612,7 @@ function initVoteStream() {
 
 initVoteStream();
 init().then(() => {
-  const page = location.hash.slice(1);
+  let page = location.hash.slice(1);
+  if (page === 'stats') page = 'more';
   if (page && document.getElementById(`page-${page}`)) showPage(page);
 });

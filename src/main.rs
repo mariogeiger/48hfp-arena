@@ -24,10 +24,17 @@ fn canonical_pair(a: usize, b: usize) -> (usize, usize) {
     if a < b { (a, b) } else { (b, a) }
 }
 
+fn pair_key(a: usize, b: usize) -> String {
+    let (lo, hi) = canonical_pair(a, b);
+    format!("{},{}", lo, hi)
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct UserState {
     seen_films: Vec<usize>,
     compared_pairs: HashSet<(usize, usize)>,
+    #[serde(default)]
+    vote_outcomes: HashMap<String, usize>, // "min,max" -> winner_id
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -354,20 +361,44 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
     }
 
     let pair = canonical_pair(payload.winner_id, payload.loser_id);
+    let key = pair_key(payload.winner_id, payload.loser_id);
 
-    {
+    // Check if already voted on this pair
+    let prev_winner: Option<usize> = {
         let users = data.users.lock().unwrap();
         if let Some(user) = users.get(&payload.user_id) {
             if user.compared_pairs.contains(&pair) {
-                return HttpResponse::Ok()
-                    .json(serde_json::json!({"status": "already_voted"}));
+                if user.vote_outcomes.get(&key) == Some(&payload.winner_id) {
+                    return HttpResponse::Ok()
+                        .json(serde_json::json!({"status": "already_voted"}));
+                }
+                // Different winner → flip
+                user.vote_outcomes.get(&key).copied()
+            } else {
+                None
             }
+        } else {
+            None
         }
-    }
+    };
 
     {
         let mut ratings = data.bt_ratings.lock().unwrap();
 
+        // If flipping, undo the old vote first
+        if let Some(prev) = prev_winner {
+            let prev_loser = if prev == pair.0 { pair.1 } else { pair.0 };
+            if let Some(w) = ratings.get_mut(&prev) {
+                w.comparisons = w.comparisons.saturating_sub(1);
+                let entry = w.wins_against.entry(prev_loser).or_insert(0);
+                *entry = entry.saturating_sub(1);
+            }
+            if let Some(l) = ratings.get_mut(&prev_loser) {
+                l.comparisons = l.comparisons.saturating_sub(1);
+            }
+        }
+
+        // Apply the new vote
         let w = ratings.entry(payload.winner_id).or_insert_with(|| BtRating::new(payload.winner_id));
         w.comparisons += 1;
         *w.wins_against.entry(payload.loser_id).or_insert(0) += 1;
@@ -382,6 +413,7 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
         let mut users = data.users.lock().unwrap();
         let user = users.entry(payload.user_id.clone()).or_default();
         user.compared_pairs.insert(pair);
+        user.vote_outcomes.insert(key, payload.winner_id);
     }
 
     data.save();
@@ -413,6 +445,7 @@ async fn undo(data: web::Data<AppState>, payload: web::Json<UndoPayload>) -> Htt
             return HttpResponse::BadRequest()
                 .json(serde_json::json!({"error": "pair not found"}));
         }
+        user.vote_outcomes.remove(&pair_key(payload.winner_id, payload.loser_id));
     }
 
     {
@@ -517,6 +550,89 @@ async fn stats(data: web::Data<AppState>) -> HttpResponse {
     }))
 }
 
+async fn user_matrix(data: web::Data<AppState>, query: web::Query<PairRequest>) -> HttpResponse {
+    let users = data.users.lock().unwrap();
+    let user = match users.get(&query.user_id) {
+        Some(u) => u,
+        None => return HttpResponse::Ok().json(serde_json::json!({"films": [], "votes": [], "legacy_votes": []})),
+    };
+
+    // Collect film IDs that appear in vote outcomes or compared pairs
+    let mut film_ids: HashSet<usize> = HashSet::new();
+    for (key, _) in &user.vote_outcomes {
+        if let Some((a, b)) = key.split_once(',') {
+            if let (Ok(a), Ok(b)) = (a.parse::<usize>(), b.parse::<usize>()) {
+                film_ids.insert(a);
+                film_ids.insert(b);
+            }
+        }
+    }
+    for &(a, b) in &user.compared_pairs {
+        let key = pair_key(a, b);
+        if !user.vote_outcomes.contains_key(&key) {
+            film_ids.insert(a);
+            film_ids.insert(b);
+        }
+    }
+
+    let mut films: Vec<serde_json::Value> = film_ids.iter()
+        .filter_map(|&id| data.films.get(&id))
+        .map(|f| serde_json::json!({"id": f.id, "title": f.title}))
+        .collect();
+    films.sort_by_key(|f| f["id"].as_u64().unwrap_or(0));
+
+    let votes: Vec<serde_json::Value> = user.vote_outcomes.iter()
+        .filter_map(|(key, &winner)| {
+            let (a, b) = key.split_once(',')?;
+            let a = a.parse::<usize>().ok()?;
+            let b = b.parse::<usize>().ok()?;
+            Some(serde_json::json!({"film_a": a, "film_b": b, "winner": winner}))
+        })
+        .collect();
+
+    let legacy_votes: Vec<serde_json::Value> = user.compared_pairs.iter()
+        .filter(|&&(a, b)| !user.vote_outcomes.contains_key(&pair_key(a, b)))
+        .map(|&(a, b)| serde_json::json!({"film_a": a, "film_b": b, "winner": null}))
+        .collect();
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "films": films,
+        "votes": votes,
+        "legacy_votes": legacy_votes,
+    }))
+}
+
+async fn global_matrix(data: web::Data<AppState>) -> HttpResponse {
+    let ratings = data.bt_ratings.lock().unwrap();
+
+    let mut film_ids: Vec<usize> = ratings.values()
+        .filter(|r| r.comparisons > 0)
+        .map(|r| r.film_id)
+        .collect();
+    film_ids.sort();
+
+    let films: Vec<serde_json::Value> = film_ids.iter()
+        .filter_map(|&id| data.films.get(&id))
+        .map(|f| serde_json::json!({"id": f.id, "title": f.title}))
+        .collect();
+
+    let mut wins: Vec<serde_json::Value> = Vec::new();
+    for &id in &film_ids {
+        if let Some(r) = ratings.get(&id) {
+            for (&loser, &count) in &r.wins_against {
+                if count > 0 {
+                    wins.push(serde_json::json!({"winner": id, "loser": loser, "count": count}));
+                }
+            }
+        }
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "films": films,
+        "wins": wins,
+    }))
+}
+
 async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
     let ratings = data.bt_ratings.lock().unwrap();
     let mut ranked: Vec<&BtRating> = ratings.values().filter(|r| r.comparisons > 0).collect();
@@ -593,9 +709,12 @@ async fn main() -> std::io::Result<()> {
             .route("/api/vote/stream", web::get().to(vote_stream))
             .route("/api/leaderboard", web::get().to(leaderboard))
             .route("/api/stats", web::get().to(stats))
+            .route("/api/user-matrix", web::get().to(user_matrix))
+            .route("/api/global-matrix", web::get().to(global_matrix))
             .service(Files::new("/", "./static").index_file("index.html"))
     })
     .bind("0.0.0.0:4848")?
+    .shutdown_timeout(5)
     .run()
     .await
 }
