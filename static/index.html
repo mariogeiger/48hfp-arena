@@ -223,6 +223,59 @@
   }
   .board-empty h3 { color: #888; margin-bottom: 8px; }
 
+  /* PAGE 4: STATS */
+  #page-stats { padding: 0; }
+  .stats-header {
+    padding: 20px 16px 12px; background: #111118;
+    position: sticky; top: 47px; z-index: 50;
+  }
+  .stats-header h1 { font-size: 22px; color: #fff; }
+  .stats-header p { font-size: 13px; color: #888; margin-top: 4px; }
+
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px; padding: 16px;
+  }
+  .stat-card {
+    background: #16161f; border-radius: 12px; padding: 20px 16px;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 32px; font-weight: 800; color: #7c6aff;
+    line-height: 1;
+  }
+  .stat-label {
+    font-size: 12px; color: #888; margin-top: 8px;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+
+  .stats-section {
+    padding: 0 16px 24px;
+  }
+  .stats-section h3 {
+    font-size: 15px; color: #aaa; margin-bottom: 12px;
+    padding-top: 8px; border-top: 1px solid #1a1a24;
+  }
+  .stats-bar-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 8px; font-size: 13px;
+  }
+  .stats-bar-label {
+    flex: 0 0 140px; color: #ccc; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .stats-bar-track {
+    flex: 1; height: 20px; background: #1a1a24; border-radius: 4px;
+    overflow: hidden;
+  }
+  .stats-bar-fill {
+    height: 100%; background: #7c6aff; border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+  .stats-bar-value {
+    flex: 0 0 36px; text-align: right; color: #888; font-size: 12px;
+  }
+
   /* VOTE NOTIFICATIONS */
   .vote-toast-container {
     position: fixed; bottom: 0; left: 0; right: 0;
@@ -258,6 +311,7 @@
   <button id="nav-select" class="active" onclick="showPage('select')">Select Films</button>
   <button id="nav-swipe" onclick="showPage('swipe')">Compare</button>
   <button id="nav-board" onclick="showPage('board')">Leaderboard</button>
+  <button id="nav-stats" onclick="showPage('stats')">Stats</button>
 </nav>
 
 <!-- PAGE 1: SELECT -->
@@ -292,6 +346,15 @@
   <div class="board-list" id="board-list"></div>
 </div>
 
+<!-- PAGE 4: STATS -->
+<div id="page-stats" class="page">
+  <div class="stats-header">
+    <h1>Statistics</h1>
+    <p>Voting activity and participation numbers</p>
+  </div>
+  <div id="stats-content"></div>
+</div>
+
 <div class="vote-toast-container" id="toast-container"></div>
 
 <script>
@@ -323,6 +386,7 @@ function showPage(page) {
 
   if (page === 'swipe') loadPair();
   if (page === 'board') loadLeaderboard();
+  if (page === 'stats') loadStats();
 }
 
 // -- PAGE 1: Film Selection --
@@ -568,6 +632,70 @@ async function loadLeaderboard() {
       </div>
     </div>
   `).join('');
+}
+
+// -- PAGE 4: Stats --
+async function loadStats() {
+  const res = await fetch('/api/stats');
+  const s = await res.json();
+  const container = document.getElementById('stats-content');
+
+  const maxSelected = s.most_selected_films.length > 0
+    ? s.most_selected_films[0].count : 1;
+
+  container.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value">${s.total_votes}</div>
+        <div class="stat-label">Total Votes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${s.active_users}</div>
+        <div class="stat-label">Active Voters</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${s.total_users}</div>
+        <div class="stat-label">Total Users</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${s.avg_votes_per_user}</div>
+        <div class="stat-label">Avg Votes / User</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${s.films_with_votes}</div>
+        <div class="stat-label">Films Voted On</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${s.total_films}</div>
+        <div class="stat-label">Total Films</div>
+      </div>
+    </div>
+    <div class="stats-section">
+      <h3>Most Selected Films</h3>
+      ${s.most_selected_films.map(f => `
+        <div class="stats-bar-row">
+          <div class="stats-bar-label" title="${esc(f.title)}">${esc(f.title)}</div>
+          <div class="stats-bar-track">
+            <div class="stats-bar-fill" style="width: ${(f.count / maxSelected * 100).toFixed(1)}%"></div>
+          </div>
+          <div class="stats-bar-value">${f.count}</div>
+        </div>
+      `).join('')}
+    </div>
+    ${s.vote_distribution.length > 0 ? `
+    <div class="stats-section">
+      <h3>Votes Per User Distribution</h3>
+      ${s.vote_distribution.map(d => `
+        <div class="stats-bar-row">
+          <div class="stats-bar-label">${d.votes} vote${d.votes !== 1 ? 's' : ''}</div>
+          <div class="stats-bar-track">
+            <div class="stats-bar-fill" style="width: ${(d.users / s.active_users * 100).toFixed(1)}%"></div>
+          </div>
+          <div class="stats-bar-value">${d.users}</div>
+        </div>
+      `).join('')}
+    </div>` : ''}
+  `;
 }
 
 function esc(s) {

@@ -337,6 +337,63 @@ async fn vote_stream(data: web::Data<AppState>) -> HttpResponse {
         .streaming(stream)
 }
 
+async fn stats(data: web::Data<AppState>) -> HttpResponse {
+    let users = data.users.lock().unwrap();
+    let ratings = data.elo_ratings.lock().unwrap();
+
+    let total_users = users.len();
+    let active_users = users.values().filter(|u| !u.compared_pairs.is_empty()).count();
+    let total_votes: usize = users.values().map(|u| u.compared_pairs.len()).sum();
+    let films_with_votes = ratings.values().filter(|r| r.comparisons > 0).count();
+    let total_films = data.films.len();
+
+    let avg_votes_per_user = if active_users > 0 {
+        total_votes as f64 / active_users as f64
+    } else {
+        0.0
+    };
+
+    let mut films_selected_count: HashMap<usize, u32> = HashMap::new();
+    for user in users.values() {
+        for &fid in &user.seen_films {
+            *films_selected_count.entry(fid).or_insert(0) += 1;
+        }
+    }
+    let most_selected: Vec<serde_json::Value> = {
+        let mut entries: Vec<_> = films_selected_count.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1));
+        entries.iter().take(10).map(|&(&fid, &count)| {
+            let title = data.films.get(&fid).map(|f| f.title.as_str()).unwrap_or("?");
+            serde_json::json!({"film_id": fid, "title": title, "count": count})
+        }).collect()
+    };
+
+    let mut vote_distribution: Vec<serde_json::Value> = users.values()
+        .filter(|u| !u.compared_pairs.is_empty())
+        .map(|u| u.compared_pairs.len())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .fold(HashMap::<usize, u32>::new(), |mut acc, v| {
+            *acc.entry(v).or_insert(0) += 1;
+            acc
+        })
+        .into_iter()
+        .map(|(votes, users)| serde_json::json!({"votes": votes, "users": users}))
+        .collect();
+    vote_distribution.sort_by(|a, b| a["votes"].as_u64().cmp(&b["votes"].as_u64()));
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "total_users": total_users,
+        "active_users": active_users,
+        "total_votes": total_votes,
+        "total_films": total_films,
+        "films_with_votes": films_with_votes,
+        "avg_votes_per_user": (avg_votes_per_user * 10.0).round() / 10.0,
+        "most_selected_films": most_selected,
+        "vote_distribution": vote_distribution,
+    }))
+}
+
 async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
     let ratings = data.elo_ratings.lock().unwrap();
     let mut board: Vec<serde_json::Value> = ratings
@@ -400,6 +457,7 @@ async fn main() -> std::io::Result<()> {
             .route("/api/vote", web::post().to(vote))
             .route("/api/vote/stream", web::get().to(vote_stream))
             .route("/api/leaderboard", web::get().to(leaderboard))
+            .route("/api/stats", web::get().to(stats))
             .service(Files::new("/", "./static").index_file("index.html"))
     })
     .bind("0.0.0.0:4848")?
