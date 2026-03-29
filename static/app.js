@@ -17,9 +17,10 @@ function esc(s) {
   return d.innerHTML;
 }
 
+const brokenPosters = new Set();
 function posterImg(url) {
-  if (!url) return `<div class="poster-ph">&#127902;</div>`;
-  return `<img class="poster" src="${esc(url)}" loading="lazy" onerror="this.outerHTML='<div class=\\'poster-ph\\'>&#127902;</div>'">`;
+  if (!url || brokenPosters.has(url)) return `<div class="poster-ph">&#127902;</div>`;
+  return `<img class="poster" src="${esc(url)}" onerror="brokenPosters.add(this.src);this.outerHTML='<div class=\\'poster-ph\\'>&#127902;</div>'">`;
 }
 
 function filmMeta(f) {
@@ -43,6 +44,13 @@ async function init() {
     fetch('/api/leaderboard'),
   ]);
   allFilms = await filmsRes.json();
+  // Preload poster URLs so broken ones are detected before cards render
+  allFilms.forEach(f => {
+    if (!f.poster_url) return;
+    const img = new Image();
+    img.onerror = () => brokenPosters.add(f.poster_url);
+    img.src = f.poster_url;
+  });
   const board = await boardRes.json();
   const rankById = new Map(board.map((item, i) => [item.film_id, i]));
   allFilms.sort((a, b) => (rankById.get(a.id) ?? Infinity) - (rankById.get(b.id) ?? Infinity));
@@ -162,26 +170,22 @@ function renderPair(a, b) {
   currentPair = { a, b };
   document.getElementById('swipe-container').innerHTML = `
     <div>
-      <div class="swipe-card" id="swipe-card">
-        <div class="swipe-overlay left-o" id="overlay-left">${esc(a.title)}</div>
-        <div class="swipe-overlay right-o" id="overlay-right">${esc(b.title)}</div>
-        <div class="vs-label">VS</div>
-        <div class="swipe-pair">
-          <div class="swipe-film">
-            ${posterImg(a.poster_url)}
-            <div class="title">${esc(a.title)}</div>
-            <div class="meta">${filmMeta(a)}</div>
-          </div>
-          <div class="swipe-film">
-            ${posterImg(b.poster_url)}
-            <div class="title">${esc(b.title)}</div>
-            <div class="meta">${filmMeta(b)}</div>
-          </div>
+      <div class="vs-badge">VS</div>
+      <div class="swipe-arena" id="swipe-arena">
+        <div class="film-card" id="film-a">
+          ${posterImg(a.poster_url)}
+          <div class="title">${esc(a.title)}</div>
+          <div class="meta">${filmMeta(a)}</div>
         </div>
-        <div class="swipe-buttons">
-          <button class="swipe-arrow-btn pick-a" onclick="castVote(currentPair.a.id, currentPair.b.id)" title="Pick left">&larr;</button>
-          <button class="swipe-arrow-btn pick-b" onclick="castVote(currentPair.b.id, currentPair.a.id)" title="Pick right">&rarr;</button>
+        <div class="film-card" id="film-b">
+          ${posterImg(b.poster_url)}
+          <div class="title">${esc(b.title)}</div>
+          <div class="meta">${filmMeta(b)}</div>
         </div>
+      </div>
+      <div class="swipe-buttons">
+        <button class="swipe-arrow-btn pick-a" id="btn-a" title="Pick left">&larr;</button>
+        <button class="swipe-arrow-btn pick-b" id="btn-b" title="Pick right">&rarr;</button>
       </div>
       <div class="swipe-progress">${voteCount} comparisons made</div>
       <div class="swipe-bottom-actions">
@@ -197,51 +201,79 @@ let swipeCleanup = null;
 function setupSwipe() {
   if (swipeCleanup) { swipeCleanup(); swipeCleanup = null; }
 
-  const card = document.getElementById('swipe-card');
-  if (!card) return;
+  const arena = document.getElementById('swipe-arena');
+  const filmA = document.getElementById('film-a');
+  const filmB = document.getElementById('film-b');
+  const btnA = document.getElementById('btn-a');
+  const btnB = document.getElementById('btn-b');
+  if (!arena) return;
 
-  let startX = 0, currentX = 0, dragging = false;
+  let startX = 0, currentX = 0, dragging = false, didDrag = false, animating = false;
 
-  function onStart(x) { startX = x; currentX = 0; dragging = true; card.style.transition = 'none'; }
+  function onStart(x) {
+    if (animating) return;
+    startX = x; currentX = 0; dragging = true; didDrag = false;
+    filmA.style.transition = 'none';
+    filmB.style.transition = 'none';
+  }
   function onMove(x) {
     if (!dragging) return;
     currentX = x - startX;
-    card.style.transform = `translateX(${currentX}px) rotate(${currentX * 0.05}deg)`;
-    const ol = document.getElementById('overlay-left');
-    const or2 = document.getElementById('overlay-right');
-    if (ol) ol.style.opacity = currentX < -30 ? Math.min(1, (-currentX - 30) / 80) : 0;
-    if (or2) or2.style.opacity = currentX > 30 ? Math.min(1, (currentX - 30) / 80) : 0;
+    if (Math.abs(currentX) > 5) didDrag = true;
+    // Mirror the vote animation during drag
+    const t = Math.min(1, Math.abs(currentX) / 150);
+    const pickedLeft = currentX < 0;
+    const winner = pickedLeft ? filmA : filmB;
+    const loser = pickedLeft ? filmB : filmA;
+    const dir = pickedLeft ? -1 : 1;
+    winner.style.transform = `translateX(${dir * t * 100}px) rotate(${dir * t * 5}deg)`;
+    winner.style.opacity = `${1 - t * 0.3}`;
+    loser.style.transform = `translateY(${t * 80}px) scale(${1 - t * 0.15})`;
+    loser.style.opacity = `${1 - t * 0.4}`;
   }
   function onEnd() {
     if (!dragging) return;
     dragging = false;
-    card.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
-
     if (Math.abs(currentX) > 80) {
-      const goRight = currentX > 0;
-      card.style.transform = `translateX(${goRight ? 400 : -400}px) rotate(${goRight ? 20 : -20}deg)`;
-      card.style.opacity = '0';
-      setTimeout(() => {
-        if (goRight) castVote(currentPair.b.id, currentPair.a.id);
-        else castVote(currentPair.a.id, currentPair.b.id);
-      }, 200);
+      if (currentX > 0) animateVote(true, currentPair.b.id, currentPair.a.id);
+      else animateVote(false, currentPair.a.id, currentPair.b.id);
     } else {
-      card.style.transform = '';
-      document.getElementById('overlay-left').style.opacity = 0;
-      document.getElementById('overlay-right').style.opacity = 0;
+      filmA.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+      filmB.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+      filmA.style.transform = '';  filmA.style.opacity = '';
+      filmB.style.transform = '';  filmB.style.opacity = '';
     }
   }
 
+  function animateVote(pickedRight, winnerId, loserId) {
+    if (animating) return;
+    animating = true;
+    const winner = pickedRight ? filmB : filmA;
+    const loser = pickedRight ? filmA : filmB;
+    const dir = pickedRight ? 1 : -1;
+    winner.style.transition = 'transform 0.4s cubic-bezier(.4,0,.2,1), opacity 0.4s ease';
+    loser.style.transition = 'transform 0.4s cubic-bezier(.4,0,.2,1), opacity 0.4s ease';
+    winner.style.transform = `translateX(${dir * 300}px) rotate(${dir * 12}deg)`;
+    winner.style.opacity = '0';
+    loser.style.transform = 'translateY(200px) scale(0.7)';
+    loser.style.opacity = '0';
+    setTimeout(() => castVote(winnerId, loserId), 350);
+  }
+
   const handlers = [
-    [card, 'mousedown', e => onStart(e.clientX)],
+    [arena, 'mousedown', e => onStart(e.clientX)],
     [window, 'mousemove', e => onMove(e.clientX)],
     [window, 'mouseup', onEnd],
-    [card, 'touchstart', e => onStart(e.touches[0].clientX), { passive: true }],
+    [arena, 'touchstart', e => onStart(e.touches[0].clientX), { passive: true }],
     [window, 'touchmove', e => onMove(e.touches[0].clientX), { passive: true }],
     [window, 'touchend', onEnd],
+    [filmA, 'click', () => { if (!didDrag) animateVote(false, currentPair.a.id, currentPair.b.id); }],
+    [filmB, 'click', () => { if (!didDrag) animateVote(true, currentPair.b.id, currentPair.a.id); }],
+    [btnA, 'click', e => { e.stopPropagation(); animateVote(false, currentPair.a.id, currentPair.b.id); }],
+    [btnB, 'click', e => { e.stopPropagation(); animateVote(true, currentPair.b.id, currentPair.a.id); }],
     [document, 'keydown', e => {
-      if (e.key === 'ArrowLeft') castVote(currentPair.a.id, currentPair.b.id);
-      else if (e.key === 'ArrowRight') castVote(currentPair.b.id, currentPair.a.id);
+      if (e.key === 'ArrowLeft') animateVote(false, currentPair.a.id, currentPair.b.id);
+      else if (e.key === 'ArrowRight') animateVote(true, currentPair.b.id, currentPair.a.id);
     }],
   ];
 

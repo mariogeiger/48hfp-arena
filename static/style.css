@@ -108,32 +108,36 @@ body {
 .swipe-container {
   position: relative; width: 100%; max-width: 500px;
   flex: 1; display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
 }
-.swipe-card {
-  width: 100%; background: #241530; border-radius: 16px;
-  padding: 10px 10px; text-align: center;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-  touch-action: pan-y; user-select: none;
-  transition: transform 0.08s ease-out, opacity 0.3s;
-  position: relative;
+.swipe-arena {
+  display: flex; align-items: stretch; gap: 10px;
+  width: 100%; touch-action: pan-y; user-select: none;
+  padding: 4px 0;
 }
-.swipe-pair { display: flex; align-items: center; gap: 6px; }
-.swipe-card .vs-label {
+.vs-badge {
   font-size: 11px; color: #EAB32D; text-transform: uppercase;
-  letter-spacing: 2px; margin-bottom: 4px;
+  letter-spacing: 2px; text-align: center; margin-bottom: 4px;
 }
-.swipe-film { flex: 1; min-width: 0; padding: 4px 0; }
-.swipe-film .poster, .swipe-film .poster-ph {
+.film-card {
+  flex: 1; min-width: 0;
+  background: #241530; border-radius: 16px;
+  padding: 12px 8px; text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  cursor: pointer;
+  transition: transform 0.3s ease, opacity 0.3s ease, box-shadow 0.3s ease;
+}
+.film-card .poster, .film-card .poster-ph {
   --pw: min(140px, 42vw); --ph: min(196px, 59vw); --pf: min(48px, 14vw);
   margin: 0 auto 6px; display: block;
 }
-.swipe-film .poster-ph { display: flex; }
-.swipe-film .title {
+.film-card .poster-ph { display: flex; }
+.film-card .title {
   font-size: 14px; font-weight: 700; color: #fff;
   overflow: hidden; text-overflow: ellipsis;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
-.swipe-film .meta { font-size: 11px; color: #8a7a96; margin-top: 2px; }
+.film-card .meta { font-size: 11px; color: #8a7a96; margin-top: 2px; }
 .swipe-buttons { display: flex; justify-content: space-around; margin-top: 8px; }
 .swipe-arrow-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -144,16 +148,6 @@ body {
 .swipe-arrow-btn:hover { border-color: #EAB32D; color: #fff; background: #3d2a4d; }
 .swipe-arrow-btn.pick-a, .swipe-arrow-btn.pick-b { border-color: #EAB32D; color: #EAB32D; }
 .swipe-arrow-btn.pick-a:hover, .swipe-arrow-btn.pick-b:hover { background: #EAB32D22; }
-
-.swipe-overlay {
-  position: absolute; top: 10px; font-size: 14px; font-weight: 900;
-  padding: 6px 10px; border-radius: 8px; border: 3px solid #EAB32D;
-  color: #EAB32D; opacity: 0; pointer-events: none;
-  transition: opacity 0.1s; z-index: 10; max-width: 45%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.swipe-overlay.left-o { left: 20px; transform: rotate(-15deg); }
-.swipe-overlay.right-o { right: 20px; transform: rotate(15deg); }
 
 .swipe-progress { margin-top: 4px; font-size: 11px; color: #8a7a96; text-align: center; }
 .swipe-done { text-align: center; }
