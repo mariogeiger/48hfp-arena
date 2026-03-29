@@ -298,7 +298,7 @@ async function loadLeaderboard() {
         <div class="board-meta">${filmMeta(item)}</div>
       </div>
       <div class="board-stats">
-        <div class="board-elo">${Math.round(item.rating)}</div>
+        <div class="board-score">${Math.round(item.rating)}</div>
         <div class="board-record">${item.wins}W - ${item.losses}L</div>
       </div>
     </div>
