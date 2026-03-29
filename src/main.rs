@@ -387,7 +387,14 @@ async fn undo(data: web::Data<AppState>, payload: web::Json<UndoPayload>) -> Htt
     }
 
     data.save();
-    HttpResponse::Ok().json(serde_json::json!({"status": "undone"}))
+
+    let film_a = &data.films[&last_vote.winner_id];
+    let film_b = &data.films[&last_vote.loser_id];
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "undone",
+        "a": film_a,
+        "b": film_b,
+    }))
 }
 
 async fn vote_stream(data: web::Data<AppState>) -> HttpResponse {

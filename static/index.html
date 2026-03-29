@@ -511,22 +511,28 @@ async function loadPair() {
   }
 
   currentPair = data;
+  renderPair(data.a, data.b);
+}
+
+function renderPair(a, b) {
+  currentPair = { a, b };
+  const container = document.getElementById('swipe-container');
   container.innerHTML = `
     <div>
       <div class="swipe-card" id="swipe-card">
         <div class="swipe-overlay left-o" id="overlay-left">B</div>
         <div class="swipe-overlay right-o" id="overlay-right">A</div>
         <div class="swipe-film">
-          ${posterImg(data.a.poster_url, 'swipe-poster', 'swipe-poster-placeholder')}
-          <div class="title">${esc(data.a.title)}</div>
-          <div class="meta">${esc(data.a.team)}${data.a.city ? ' &middot; ' + esc(data.a.city) : ''}</div>
+          ${posterImg(a.poster_url, 'swipe-poster', 'swipe-poster-placeholder')}
+          <div class="title">${esc(a.title)}</div>
+          <div class="meta">${esc(a.team)}${a.city ? ' &middot; ' + esc(a.city) : ''}</div>
           <button class="swipe-arrow-btn pick-a" onclick="castVote(currentPair.a.id, currentPair.b.id)" title="Pick this one">&rarr;</button>
         </div>
         <div class="vs-label">VS</div>
         <div class="swipe-film">
-          ${posterImg(data.b.poster_url, 'swipe-poster', 'swipe-poster-placeholder')}
-          <div class="title">${esc(data.b.title)}</div>
-          <div class="meta">${esc(data.b.team)}${data.b.city ? ' &middot; ' + esc(data.b.city) : ''}</div>
+          ${posterImg(b.poster_url, 'swipe-poster', 'swipe-poster-placeholder')}
+          <div class="title">${esc(b.title)}</div>
+          <div class="meta">${esc(b.team)}${b.city ? ' &middot; ' + esc(b.city) : ''}</div>
           <button class="swipe-arrow-btn pick-b" onclick="castVote(currentPair.b.id, currentPair.a.id)" title="Pick this one">&larr;</button>
         </div>
       </div>
@@ -536,7 +542,6 @@ async function loadPair() {
         <button class="skip-btn" onclick="loadPair()">Skip</button>
       </div>
     </div>`;
-
   setupSwipe();
 }
 
@@ -643,7 +648,7 @@ async function undoVote() {
     voteCount = Math.max(0, voteCount - 1);
     localStorage.setItem('filmrank_votes', voteCount);
     undoCount--;
-    loadPair();
+    renderPair(result.a, result.b);
   }
 }
 
