@@ -223,6 +223,29 @@
   }
   .board-empty h3 { color: #888; margin-bottom: 8px; }
 
+  /* VOTE NOTIFICATIONS */
+  .vote-toast-container {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; flex-direction: column-reverse; align-items: center;
+    padding: 12px; gap: 8px; pointer-events: none; z-index: 9999;
+  }
+  .vote-toast {
+    background: #1e1e2e; border: 1px solid #333; border-left: 3px solid #7c6aff;
+    padding: 10px 16px; border-radius: 8px; color: #ccc; font-size: 13px;
+    max-width: 400px; width: 100%;
+    animation: toast-in 0.3s ease, toast-out 0.4s ease 3.6s forwards;
+    pointer-events: auto;
+  }
+  .vote-toast strong { color: #fff; }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes toast-out {
+    from { opacity: 1; }
+    to { opacity: 0; transform: translateY(10px); }
+  }
+
   @media (min-width: 600px) {
     .film-list { columns: 2; column-gap: 8px; }
     .film-item { break-inside: avoid; }
@@ -268,6 +291,8 @@
   </div>
   <div class="board-list" id="board-list"></div>
 </div>
+
+<div class="vote-toast-container" id="toast-container"></div>
 
 <script>
 const USER_ID = localStorage.getItem('filmrank_uid') || (() => {
@@ -424,7 +449,13 @@ async function loadPair() {
   setupSwipe();
 }
 
+// Track active listeners so we can clean them up
+let swipeCleanup = null;
+
 function setupSwipe() {
+  // Remove previous listeners
+  if (swipeCleanup) { swipeCleanup(); swipeCleanup = null; }
+
   const card = document.getElementById('swipe-card');
   if (!card) return;
 
@@ -434,9 +465,18 @@ function setupSwipe() {
     startX = x; currentX = 0; dragging = true;
     card.style.transition = 'none';
   }
-  function onMove(x) {
+  function onMouseMove(e) {
     if (!dragging) return;
-    currentX = x - startX;
+    currentX = e.clientX - startX;
+    card.style.transform = `translateX(${currentX}px) rotate(${currentX * 0.05}deg)`;
+    const ol = document.getElementById('overlay-left');
+    const or2 = document.getElementById('overlay-right');
+    if (ol) ol.style.opacity = currentX < -30 ? Math.min(1, (-currentX - 30) / 80) : 0;
+    if (or2) or2.style.opacity = currentX > 30 ? Math.min(1, (currentX - 30) / 80) : 0;
+  }
+  function onTouchMove(e) {
+    if (!dragging) return;
+    currentX = e.touches[0].clientX - startX;
     card.style.transform = `translateX(${currentX}px) rotate(${currentX * 0.05}deg)`;
     const ol = document.getElementById('overlay-left');
     const or2 = document.getElementById('overlay-right');
@@ -462,25 +502,30 @@ function setupSwipe() {
       document.getElementById('overlay-right').style.opacity = 0;
     }
   }
-
-  card.addEventListener('mousedown', e => onStart(e.clientX));
-  window.addEventListener('mousemove', e => onMove(e.clientX));
-  window.addEventListener('mouseup', onEnd);
-  card.addEventListener('touchstart', e => onStart(e.touches[0].clientX), { passive: true });
-  window.addEventListener('touchmove', e => onMove(e.touches[0].clientX), { passive: true });
-  window.addEventListener('touchend', onEnd);
-
-  // Keyboard support
+  function onMouseDown(e) { onStart(e.clientX); }
+  function onTouchStart(e) { onStart(e.touches[0].clientX); }
   function onKey(e) {
-    if (e.key === 'ArrowRight') {
-      document.removeEventListener('keydown', onKey);
-      castVote(currentPair.a.id, currentPair.b.id);
-    } else if (e.key === 'ArrowLeft') {
-      document.removeEventListener('keydown', onKey);
-      castVote(currentPair.b.id, currentPair.a.id);
-    }
+    if (e.key === 'ArrowRight') castVote(currentPair.a.id, currentPair.b.id);
+    else if (e.key === 'ArrowLeft') castVote(currentPair.b.id, currentPair.a.id);
   }
+
+  card.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onEnd);
+  card.addEventListener('touchstart', onTouchStart, { passive: true });
+  window.addEventListener('touchmove', onTouchMove, { passive: true });
+  window.addEventListener('touchend', onEnd);
   document.addEventListener('keydown', onKey);
+
+  swipeCleanup = () => {
+    card.removeEventListener('mousedown', onMouseDown);
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onEnd);
+    card.removeEventListener('touchstart', onTouchStart);
+    window.removeEventListener('touchmove', onTouchMove);
+    window.removeEventListener('touchend', onEnd);
+    document.removeEventListener('keydown', onKey);
+  };
 }
 
 async function castVote(winnerId, loserId) {
@@ -536,6 +581,29 @@ function posterImg(url, cls, phCls) {
   return `<img class="${cls}" src="${esc(url)}" loading="lazy" onerror="this.outerHTML='<div class=\\'${phCls}\\'>&#127902;</div>'">`;
 }
 
+// -- Vote Notifications (SSE) --
+function initVoteStream() {
+  const es = new EventSource('/api/vote/stream');
+  es.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    showVoteToast(data.winner_title, data.loser_title);
+  };
+  es.onerror = () => {
+    es.close();
+    setTimeout(initVoteStream, 5000);
+  };
+}
+
+function showVoteToast(winner, loser) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'vote-toast';
+  toast.innerHTML = `Someone voted: <strong>${esc(winner)}</strong> over ${esc(loser)}`;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+initVoteStream();
 init();
 </script>
 </body>

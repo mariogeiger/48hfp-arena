@@ -2,8 +2,9 @@ use actix_files::Files;
 use actix_web::{web, App, HttpResponse, HttpServer};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
+use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Film {
@@ -26,7 +27,7 @@ struct EloRating {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct UserState {
     seen_films: Vec<usize>,
-    compared_pairs: Vec<(usize, usize)>,
+    compared_pairs: HashSet<(usize, usize)>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,11 +37,20 @@ struct PersistentData {
 }
 
 const DB_PATH: &str = "db.json";
+const DB_TMP_PATH: &str = "db.json.tmp";
+
+#[derive(Debug, Clone, Serialize)]
+struct VoteEvent {
+    winner_title: String,
+    loser_title: String,
+}
 
 struct AppState {
     films: Vec<Film>,
+    film_ids: HashSet<usize>,
     elo_ratings: Mutex<HashMap<usize, EloRating>>,
     users: Mutex<HashMap<String, UserState>>,
+    vote_tx: broadcast::Sender<VoteEvent>,
 }
 
 impl AppState {
@@ -50,7 +60,10 @@ impl AppState {
             users: self.users.lock().unwrap().clone(),
         };
         if let Ok(json) = serde_json::to_string(&data) {
-            let _ = std::fs::write(DB_PATH, json);
+            // Atomic write: write to tmp then rename
+            if std::fs::write(DB_TMP_PATH, &json).is_ok() {
+                let _ = std::fs::rename(DB_TMP_PATH, DB_PATH);
+            }
         }
     }
 }
@@ -58,7 +71,6 @@ impl AppState {
 fn load_db(films: &[Film]) -> (HashMap<usize, EloRating>, HashMap<String, UserState>) {
     if let Ok(content) = std::fs::read_to_string(DB_PATH) {
         if let Ok(data) = serde_json::from_str::<PersistentData>(&content) {
-            // Merge: keep saved ratings but ensure all films have an entry
             let mut ratings = data.elo_ratings;
             for film in films {
                 ratings.entry(film.id).or_insert(EloRating {
@@ -69,7 +81,12 @@ fn load_db(films: &[Film]) -> (HashMap<usize, EloRating>, HashMap<String, UserSt
                     comparisons: 0,
                 });
             }
-            println!("Loaded {} ratings, {} users from {}", ratings.len(), data.users.len(), DB_PATH);
+            println!(
+                "Loaded {} ratings, {} users from {}",
+                ratings.len(),
+                data.users.len(),
+                DB_PATH
+            );
             return (ratings, data.users);
         }
     }
@@ -171,13 +188,13 @@ async fn set_selection(
 ) -> HttpResponse {
     {
         let mut users = data.users.lock().unwrap();
-        users.insert(
-            payload.user_id.clone(),
-            UserState {
-                seen_films: payload.film_ids.clone(),
-                compared_pairs: Vec::new(),
-            },
-        );
+        let user = users
+            .entry(payload.user_id.clone())
+            .or_insert_with(|| UserState {
+                seen_films: Vec::new(),
+                compared_pairs: HashSet::new(),
+            });
+        user.seen_films = payload.film_ids.clone();
     }
     data.save();
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
@@ -197,36 +214,66 @@ async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> 
         return HttpResponse::Ok().json(serde_json::json!({"done": true}));
     }
 
-    let mut rng = rand::thread_rng();
-    let mut attempts = 0;
-    loop {
-        attempts += 1;
-        if attempts > 500 {
-            return HttpResponse::Ok().json(serde_json::json!({"done": true}));
+    let seen = &user.seen_films;
+    let mut remaining = Vec::new();
+    for i in 0..seen.len() {
+        for j in (i + 1)..seen.len() {
+            let pair = if seen[i] < seen[j] {
+                (seen[i], seen[j])
+            } else {
+                (seen[j], seen[i])
+            };
+            if !user.compared_pairs.contains(&pair) {
+                remaining.push(pair);
+            }
         }
-        let a = *user.seen_films.choose(&mut rng).unwrap();
-        let b = *user.seen_films.choose(&mut rng).unwrap();
-        if a == b {
-            continue;
-        }
-
-        let pair = if a < b { (a, b) } else { (b, a) };
-        if user.compared_pairs.contains(&pair) {
-            continue;
-        }
-
-        let film_a = data.films.iter().find(|f| f.id == a).unwrap();
-        let film_b = data.films.iter().find(|f| f.id == b).unwrap();
-
-        return HttpResponse::Ok().json(serde_json::json!({
-            "done": false,
-            "a": film_a,
-            "b": film_b,
-        }));
     }
+
+    if remaining.is_empty() {
+        return HttpResponse::Ok().json(serde_json::json!({"done": true}));
+    }
+
+    let mut rng = rand::thread_rng();
+    let &(a, b) = remaining.choose(&mut rng).unwrap();
+
+    let film_a = data.films.iter().find(|f| f.id == a).unwrap();
+    let film_b = data.films.iter().find(|f| f.id == b).unwrap();
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "done": false,
+        "a": film_a,
+        "b": film_b,
+        "remaining": remaining.len(),
+    }))
 }
 
 async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> HttpResponse {
+    // Validate film IDs exist
+    if !data.film_ids.contains(&payload.winner_id)
+        || !data.film_ids.contains(&payload.loser_id)
+        || payload.winner_id == payload.loser_id
+    {
+        return HttpResponse::BadRequest()
+            .json(serde_json::json!({"error": "invalid film ids"}));
+    }
+
+    // Check for duplicate vote
+    let pair = if payload.winner_id < payload.loser_id {
+        (payload.winner_id, payload.loser_id)
+    } else {
+        (payload.loser_id, payload.winner_id)
+    };
+
+    {
+        let users = data.users.lock().unwrap();
+        if let Some(user) = users.get(&payload.user_id) {
+            if user.compared_pairs.contains(&pair) {
+                return HttpResponse::Ok()
+                    .json(serde_json::json!({"status": "already_voted"}));
+            }
+        }
+    }
+
     {
         let mut ratings = data.elo_ratings.lock().unwrap();
         let winner_rating = ratings
@@ -266,17 +313,54 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
     {
         let mut users = data.users.lock().unwrap();
         if let Some(user) = users.get_mut(&payload.user_id) {
-            let pair = if payload.winner_id < payload.loser_id {
-                (payload.winner_id, payload.loser_id)
-            } else {
-                (payload.loser_id, payload.winner_id)
-            };
-            user.compared_pairs.push(pair);
+            user.compared_pairs.insert(pair);
         }
     }
 
     data.save();
+
+    let winner_title = data
+        .films
+        .iter()
+        .find(|f| f.id == payload.winner_id)
+        .map(|f| f.title.clone())
+        .unwrap_or_default();
+    let loser_title = data
+        .films
+        .iter()
+        .find(|f| f.id == payload.loser_id)
+        .map(|f| f.title.clone())
+        .unwrap_or_default();
+    let _ = data.vote_tx.send(VoteEvent {
+        winner_title,
+        loser_title,
+    });
+
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
+}
+
+async fn vote_stream(data: web::Data<AppState>) -> HttpResponse {
+    let mut rx = data.vote_tx.subscribe();
+    let stream = async_stream::stream! {
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    let json = serde_json::to_string(&event).unwrap();
+                    yield Ok::<_, actix_web::Error>(
+                        actix_web::web::Bytes::from(format!("data: {}\n\n", json))
+                    );
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => break,
+            }
+        }
+    };
+
+    HttpResponse::Ok()
+        .insert_header(("Content-Type", "text/event-stream"))
+        .insert_header(("Cache-Control", "no-cache"))
+        .insert_header(("X-Accel-Buffering", "no"))
+        .streaming(stream)
 }
 
 async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
@@ -315,13 +399,17 @@ async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
 async fn main() -> std::io::Result<()> {
     let csv_content = std::fs::read_to_string("data.csv").expect("Cannot read data.csv");
     let films = parse_csv(&csv_content);
+    let film_ids: HashSet<usize> = films.iter().map(|f| f.id).collect();
 
     let (ratings, users) = load_db(&films);
+    let (vote_tx, _) = broadcast::channel::<VoteEvent>(64);
 
     let state = web::Data::new(AppState {
         films,
+        film_ids,
         elo_ratings: Mutex::new(ratings),
         users: Mutex::new(users),
+        vote_tx,
     });
 
     println!("Server running at http://localhost:4848");
@@ -333,6 +421,7 @@ async fn main() -> std::io::Result<()> {
             .route("/api/selection", web::post().to(set_selection))
             .route("/api/pair", web::get().to(get_pair))
             .route("/api/vote", web::post().to(vote))
+            .route("/api/vote/stream", web::get().to(vote_stream))
             .route("/api/leaderboard", web::get().to(leaderboard))
             .service(Files::new("/", "./static").index_file("index.html"))
     })
