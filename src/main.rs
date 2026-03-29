@@ -21,7 +21,6 @@ struct EloRating {
     film_id: usize,
     rating: f64,
     wins: u32,
-    losses: u32,
     comparisons: u32,
 }
 
@@ -31,9 +30,11 @@ impl EloRating {
             film_id,
             rating: 1500.0,
             wins: 0,
-            losses: 0,
             comparisons: 0,
         }
+    }
+    fn losses(&self) -> u32 {
+        self.comparisons - self.wins
     }
 }
 
@@ -49,7 +50,7 @@ struct LastVote {
     loser_delta: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct UserState {
     seen_films: Vec<usize>,
     compared_pairs: HashSet<(usize, usize)>,
@@ -75,7 +76,6 @@ struct VoteEvent {
 
 struct AppState {
     films: HashMap<usize, Film>,
-    film_ids: HashSet<usize>,
     elo_ratings: Mutex<HashMap<usize, EloRating>>,
     users: Mutex<HashMap<String, UserState>>,
     vote_tx: broadcast::Sender<VoteEvent>,
@@ -88,9 +88,16 @@ impl AppState {
             users: self.users.lock().unwrap().clone(),
         };
         if let Ok(json) = serde_json::to_string(&data) {
-            // Atomic write: write to tmp then rename
-            if std::fs::write(DB_TMP_PATH, &json).is_ok() {
-                let _ = std::fs::rename(DB_TMP_PATH, DB_PATH);
+            // Atomic write: write to tmp, fsync, then rename
+            if let Ok(file) = std::fs::File::create(DB_TMP_PATH) {
+                use std::io::Write;
+                let mut writer = std::io::BufWriter::new(file);
+                if writer.write_all(json.as_bytes()).is_ok()
+                    && writer.flush().is_ok()
+                    && writer.get_ref().sync_all().is_ok()
+                {
+                    let _ = std::fs::rename(DB_TMP_PATH, DB_PATH);
+                }
             }
         }
     }
@@ -144,55 +151,28 @@ struct UndoPayload {
 }
 
 fn parse_csv(content: &str) -> Vec<Film> {
-    let mut films = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if i == 0 {
-            continue;
-        }
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        let parts: Vec<&str> = line.splitn(3, ',').collect();
-        if parts.len() < 2 {
-            continue;
-        }
-
-        let title = parts[0].trim().trim_matches('"').to_string();
-        let team = parts[1].trim().to_string();
-        let city = if parts.len() > 2 {
-            parts[2].trim().to_string()
-        } else {
-            String::new()
-        };
-
-        let poster_url = if !city.is_empty() {
-            format!(
+    content.lines()
+        .skip(1)
+        .enumerate()
+        .filter_map(|(i, line)| {
+            let line = line.trim();
+            let parts: Vec<&str> = line.splitn(3, ',').collect();
+            let title = parts.first()?.trim().trim_matches('"').to_string();
+            let team = parts.get(1)?.trim().to_string();
+            let city = parts.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
+            let poster_url = format!(
                 "https://www.48hourfilm.com/storage/posters/48HFP {} 2025 - {} - Poster - file 1.jpg",
                 city, team
-            )
-        } else {
-            String::new()
-        };
-
-        films.push(Film {
-            id: i,
-            title,
-            team,
-            city,
-            poster_url,
-        });
-    }
-    films
+            );
+            Some(Film { id: i + 1, title, team, city, poster_url })
+        })
+        .collect()
 }
 
 fn calculate_elo(winner_rating: f64, loser_rating: f64, k: f64) -> (f64, f64) {
-    let expected_winner = 1.0 / (1.0 + 10f64.powf((loser_rating - winner_rating) / 400.0));
-    let expected_loser = 1.0 / (1.0 + 10f64.powf((winner_rating - loser_rating) / 400.0));
-    let new_winner = winner_rating + k * (1.0 - expected_winner);
-    let new_loser = loser_rating + k * (0.0 - expected_loser);
-    (new_winner, new_loser)
+    let expected = 1.0 / (1.0 + 10f64.powf((loser_rating - winner_rating) / 400.0));
+    let delta = k * (1.0 - expected);
+    (winner_rating + delta, loser_rating - delta)
 }
 
 async fn get_films(data: web::Data<AppState>) -> HttpResponse {
@@ -206,13 +186,7 @@ async fn set_selection(
 ) -> HttpResponse {
     {
         let mut users = data.users.lock().unwrap();
-        let user = users
-            .entry(payload.user_id.clone())
-            .or_insert_with(|| UserState {
-                seen_films: Vec::new(),
-                compared_pairs: HashSet::new(),
-                vote_history: Vec::new(),
-            });
+        let user = users.entry(payload.user_id.clone()).or_default();
         user.seen_films = payload.film_ids.clone();
     }
     data.save();
@@ -220,17 +194,13 @@ async fn set_selection(
 }
 
 async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> HttpResponse {
-    let users = data.users.lock().unwrap();
-    let user = match users.get(&query.user_id) {
-        Some(u) => u,
-        None => {
-            return HttpResponse::BadRequest()
-                .json(serde_json::json!({"error": "unknown user"}));
-        }
-    };
+    let mut users = data.users.lock().unwrap();
+    let user = users.entry(query.user_id.clone()).or_default();
+
+    let votes = user.compared_pairs.len();
 
     if user.seen_films.len() < 2 {
-        return HttpResponse::Ok().json(serde_json::json!({"done": true}));
+        return HttpResponse::Ok().json(serde_json::json!({"done": true, "votes": votes}));
     }
 
     let seen = &user.seen_films;
@@ -245,7 +215,7 @@ async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> 
     }
 
     if remaining.is_empty() {
-        return HttpResponse::Ok().json(serde_json::json!({"done": true}));
+        return HttpResponse::Ok().json(serde_json::json!({"done": true, "votes": votes}));
     }
 
     let ratings = data.elo_ratings.lock().unwrap();
@@ -271,13 +241,14 @@ async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> 
         "a": film_a,
         "b": film_b,
         "remaining": remaining.len(),
+        "votes": votes,
     }))
 }
 
 async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> HttpResponse {
     // Validate film IDs exist
-    if !data.film_ids.contains(&payload.winner_id)
-        || !data.film_ids.contains(&payload.loser_id)
+    if !data.films.contains_key(&payload.winner_id)
+        || !data.films.contains_key(&payload.loser_id)
         || payload.winner_id == payload.loser_id
     {
         return HttpResponse::BadRequest()
@@ -324,7 +295,6 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
 
         let l = ratings.get_mut(&payload.loser_id).unwrap();
         l.rating = new_loser;
-        l.losses += 1;
         l.comparisons += 1;
     }
 
@@ -382,7 +352,6 @@ async fn undo(data: web::Data<AppState>, payload: web::Json<UndoPayload>) -> Htt
         }
         if let Some(l) = ratings.get_mut(&last_vote.loser_id) {
             l.rating -= last_vote.loser_delta;
-            l.losses = l.losses.saturating_sub(1);
             l.comparisons = l.comparisons.saturating_sub(1);
         }
     }
@@ -453,19 +422,20 @@ async fn stats(data: web::Data<AppState>) -> HttpResponse {
         }).collect()
     };
 
-    let mut vote_distribution: Vec<serde_json::Value> = users.values()
-        .filter(|u| !u.compared_pairs.is_empty())
-        .map(|u| u.compared_pairs.len())
-        .collect::<Vec<_>>()
-        .into_iter()
-        .fold(HashMap::<usize, u32>::new(), |mut acc, v| {
-            *acc.entry(v).or_insert(0) += 1;
-            acc
-        })
-        .into_iter()
-        .map(|(votes, users)| serde_json::json!({"votes": votes, "users": users}))
+    let mut vote_dist: Vec<(usize, u32)> = {
+        let mut counts = HashMap::<usize, u32>::new();
+        for u in users.values() {
+            if !u.compared_pairs.is_empty() {
+                *counts.entry(u.compared_pairs.len()).or_default() += 1;
+            }
+        }
+        counts.into_iter().collect()
+    };
+    vote_dist.sort_by_key(|&(votes, _)| votes);
+    let vote_distribution: Vec<serde_json::Value> = vote_dist
+        .iter()
+        .map(|&(votes, users)| serde_json::json!({"votes": votes, "users": users}))
         .collect();
-    vote_distribution.sort_by(|a, b| a["votes"].as_u64().cmp(&b["votes"].as_u64()));
 
     HttpResponse::Ok().json(serde_json::json!({
         "total_users": total_users,
@@ -481,9 +451,11 @@ async fn stats(data: web::Data<AppState>) -> HttpResponse {
 
 async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
     let ratings = data.elo_ratings.lock().unwrap();
-    let mut board: Vec<serde_json::Value> = ratings
-        .values()
-        .filter(|r| r.comparisons > 0)
+    let mut ranked: Vec<&EloRating> = ratings.values().filter(|r| r.comparisons > 0).collect();
+    ranked.sort_by(|a, b| b.rating.partial_cmp(&a.rating).unwrap());
+
+    let board: Vec<serde_json::Value> = ranked
+        .iter()
         .map(|r| {
             let film = data.films.get(&r.film_id);
             serde_json::json!({
@@ -494,19 +466,11 @@ async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
                 "poster_url": film.map(|f| f.poster_url.as_str()).unwrap_or(""),
                 "rating": (r.rating * 10.0).round() / 10.0,
                 "wins": r.wins,
-                "losses": r.losses,
+                "losses": r.losses(),
                 "comparisons": r.comparisons,
             })
         })
         .collect();
-
-    board.sort_by(|a, b| {
-        b["rating"]
-            .as_f64()
-            .unwrap()
-            .partial_cmp(&a["rating"].as_f64().unwrap())
-            .unwrap()
-    });
 
     HttpResponse::Ok().json(board)
 }
@@ -518,14 +482,11 @@ async fn main() -> std::io::Result<()> {
         .into_iter()
         .map(|f| (f.id, f))
         .collect();
-    let film_ids: HashSet<usize> = films.keys().copied().collect();
-
     let (ratings, users) = load_db(&films);
     let (vote_tx, _) = broadcast::channel::<VoteEvent>(64);
 
     let state = web::Data::new(AppState {
         films,
-        film_ids,
         elo_ratings: Mutex::new(ratings),
         users: Mutex::new(users),
         vote_tx,
