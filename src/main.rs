@@ -1,6 +1,7 @@
 use actix_files::Files;
 use actix_web::{web, App, HttpResponse, HttpServer};
-use rand::seq::SliceRandom;
+use rand::distributions::WeightedIndex;
+use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -41,9 +42,19 @@ fn canonical_pair(a: usize, b: usize) -> (usize, usize) {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct LastVote {
+    winner_id: usize,
+    loser_id: usize,
+    winner_delta: f64,
+    loser_delta: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct UserState {
     seen_films: Vec<usize>,
     compared_pairs: HashSet<(usize, usize)>,
+    #[serde(skip)]
+    vote_history: Vec<LastVote>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -127,6 +138,11 @@ struct PairRequest {
     user_id: String,
 }
 
+#[derive(Deserialize)]
+struct UndoPayload {
+    user_id: String,
+}
+
 fn parse_csv(content: &str) -> Vec<Film> {
     let mut films = Vec::new();
     for (i, line) in content.lines().enumerate() {
@@ -195,6 +211,7 @@ async fn set_selection(
             .or_insert_with(|| UserState {
                 seen_films: Vec::new(),
                 compared_pairs: HashSet::new(),
+                vote_history: Vec::new(),
             });
         user.seen_films = payload.film_ids.clone();
     }
@@ -231,8 +248,19 @@ async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> 
         return HttpResponse::Ok().json(serde_json::json!({"done": true}));
     }
 
+    let ratings = data.elo_ratings.lock().unwrap();
+    let weights: Vec<f64> = remaining.iter().map(|&(a, b)| {
+        let ra = ratings.get(&a).map(|r| (r.rating, r.comparisons)).unwrap_or((1500.0, 0));
+        let rb = ratings.get(&b).map(|r| (r.rating, r.comparisons)).unwrap_or((1500.0, 0));
+        let closeness = 1.0 / (1.0 + (ra.0 - rb.0).abs() / 200.0);
+        let uncertainty = 2.0 / (2.0 + ra.1 as f64 + rb.1 as f64);
+        closeness + uncertainty
+    }).collect();
+    drop(ratings);
+
     let mut rng = rand::thread_rng();
-    let &(a, b) = remaining.choose(&mut rng).unwrap();
+    let dist = WeightedIndex::new(&weights).unwrap();
+    let (a, b) = remaining[rng.sample(&dist)];
 
     let film_a = &data.films[&a];
     let film_b = &data.films[&b];
@@ -267,6 +295,7 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
         }
     }
 
+    let last_vote;
     {
         let mut ratings = data.elo_ratings.lock().unwrap();
         let winner_rating = ratings
@@ -279,6 +308,13 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
             .rating;
 
         let (new_winner, new_loser) = calculate_elo(winner_rating, loser_rating, 32.0);
+
+        last_vote = LastVote {
+            winner_id: payload.winner_id,
+            loser_id: payload.loser_id,
+            winner_delta: new_winner - winner_rating,
+            loser_delta: new_loser - loser_rating,
+        };
 
         let w = ratings.get_mut(&payload.winner_id).unwrap();
         w.rating = new_winner;
@@ -295,6 +331,7 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
         let mut users = data.users.lock().unwrap();
         if let Some(user) = users.get_mut(&payload.user_id) {
             user.compared_pairs.insert(pair);
+            user.vote_history.push(last_vote);
         }
     }
 
@@ -311,6 +348,46 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
     });
 
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
+}
+
+async fn undo(data: web::Data<AppState>, payload: web::Json<UndoPayload>) -> HttpResponse {
+    let last_vote = {
+        let mut users = data.users.lock().unwrap();
+        let user = match users.get_mut(&payload.user_id) {
+            Some(u) => u,
+            None => {
+                return HttpResponse::BadRequest()
+                    .json(serde_json::json!({"error": "unknown user"}));
+            }
+        };
+        let lv = match user.vote_history.pop() {
+            Some(lv) => lv,
+            None => {
+                return HttpResponse::Ok()
+                    .json(serde_json::json!({"status": "nothing_to_undo"}));
+            }
+        };
+        let pair = canonical_pair(lv.winner_id, lv.loser_id);
+        user.compared_pairs.remove(&pair);
+        lv
+    };
+
+    {
+        let mut ratings = data.elo_ratings.lock().unwrap();
+        if let Some(w) = ratings.get_mut(&last_vote.winner_id) {
+            w.rating -= last_vote.winner_delta;
+            w.wins = w.wins.saturating_sub(1);
+            w.comparisons = w.comparisons.saturating_sub(1);
+        }
+        if let Some(l) = ratings.get_mut(&last_vote.loser_id) {
+            l.rating -= last_vote.loser_delta;
+            l.losses = l.losses.saturating_sub(1);
+            l.comparisons = l.comparisons.saturating_sub(1);
+        }
+    }
+
+    data.save();
+    HttpResponse::Ok().json(serde_json::json!({"status": "undone"}))
 }
 
 async fn vote_stream(data: web::Data<AppState>) -> HttpResponse {
@@ -455,6 +532,7 @@ async fn main() -> std::io::Result<()> {
             .route("/api/selection", web::post().to(set_selection))
             .route("/api/pair", web::get().to(get_pair))
             .route("/api/vote", web::post().to(vote))
+            .route("/api/undo", web::post().to(undo))
             .route("/api/vote/stream", web::get().to(vote_stream))
             .route("/api/leaderboard", web::get().to(leaderboard))
             .route("/api/stats", web::get().to(stats))
