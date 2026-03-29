@@ -124,8 +124,8 @@ body {
 }
 .swipe-film { flex: 1; min-width: 0; padding: 4px 0; }
 .swipe-film .poster, .swipe-film .poster-ph {
-  --pw: 60px; --ph: 84px; --pf: 24px;
-  margin: 0 auto 4px; display: block;
+  --pw: 140px; --ph: 196px; --pf: 48px;
+  margin: 0 auto 6px; display: block;
 }
 .swipe-film .poster-ph { display: flex; }
 .swipe-film .title {
