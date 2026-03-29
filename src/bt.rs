@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BtRating {
@@ -42,7 +42,8 @@ impl BtRating {
 ///
 /// Films with zero wins keep a near-zero score (they sit below all ranked films).
 pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
-    let active_ids: Vec<usize> = ratings.values()
+    let active_ids: Vec<usize> = ratings
+        .values()
         .filter(|r| r.comparisons > 0)
         .map(|r| r.film_id)
         .collect();
@@ -58,7 +59,8 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
         }
     }
 
-    let ranked_ids: Vec<usize> = active_ids.iter()
+    let ranked_ids: Vec<usize> = active_ids
+        .iter()
         .copied()
         .filter(|&id| ratings[&id].wins() > 0)
         .collect();
@@ -68,7 +70,11 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
     }
 
     // Map film_id → index into old_scores; allocated once, reused each iteration.
-    let idx: HashMap<usize, usize> = active_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+    let idx: HashMap<usize, usize> = active_ids
+        .iter()
+        .enumerate()
+        .map(|(i, &id)| (id, i))
+        .collect();
     let mut old_scores: Vec<f64> = active_ids.iter().map(|&id| ratings[&id].score).collect();
 
     for _ in 0..500 {
@@ -83,11 +89,11 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
             let w_i = ratings[&i].wins() as f64;
             let score_i = old_scores[idx[&i]];
 
-            let denom: f64 = active_ids.iter()
+            let denom: f64 = active_ids
+                .iter()
                 .filter(|&&j| j != i)
                 .filter_map(|&j| {
-                    let n_ij =
-                        ratings[&i].wins_against.get(&j).copied().unwrap_or(0) as f64
+                    let n_ij = ratings[&i].wins_against.get(&j).copied().unwrap_or(0) as f64
                         + ratings[&j].wins_against.get(&i).copied().unwrap_or(0) as f64;
                     if n_ij > 0.0 {
                         Some(n_ij / (score_i + old_scores[idx[&j]]))
@@ -105,7 +111,8 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
             }
         }
 
-        let log_mean: f64 = ranked_ids.iter()
+        let log_mean: f64 = ranked_ids
+            .iter()
             .map(|&id| ratings[&id].score.ln())
             .sum::<f64>()
             / ranked_ids.len() as f64;

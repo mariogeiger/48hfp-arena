@@ -1,0 +1,14 @@
+repos:
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        types_or: [css, html, javascript]
+
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: rustfmt
+        entry: rustfmt --edition 2024
+        language: system
+        types: [rust]

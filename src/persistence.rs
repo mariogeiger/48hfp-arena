@@ -2,8 +2,8 @@ use crate::bt::BtRating;
 use crate::models::{Film, PersistentData, UserState, VoteEvent};
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::broadcast;
 
 pub const DB_PATH: &str = "db.json";
@@ -158,7 +158,8 @@ fn count_votes_in_raw_json(content: &str) -> usize {
     let Some(users) = raw.get("users").and_then(|u| u.as_object()) else {
         return 0;
     };
-    users.values()
+    users
+        .values()
         .filter_map(|u| u.get("compared_pairs").and_then(|p| p.as_array()))
         .map(|pairs| pairs.len())
         .sum()
@@ -167,7 +168,9 @@ fn count_votes_in_raw_json(content: &str) -> usize {
 /// Returns (ratings, users, votes_on_disk).
 /// `votes_on_disk` is the vote count from the file on disk — even if the schema
 /// didn't parse, we extract it from raw JSON so the safety floor is set.
-pub fn load_db(films: &HashMap<usize, Film>) -> (HashMap<usize, BtRating>, HashMap<String, UserState>, usize) {
+pub fn load_db(
+    films: &HashMap<usize, Film>,
+) -> (HashMap<usize, BtRating>, HashMap<String, UserState>, usize) {
     let (mut ratings, users, votes_on_disk) = match std::fs::read_to_string(DB_PATH) {
         Err(_) => {
             println!("No existing db found, starting fresh");
@@ -191,16 +194,11 @@ pub fn load_db(films: &HashMap<usize, Film>) -> (HashMap<usize, BtRating>, HashM
                 }
                 Err(e) => {
                     // Schema mismatch or corruption — save the old file so data isn't lost
-                    let rescue_path = format!("{}/db_rescue_{}.json", BACKUP_DIR, std::process::id());
+                    let rescue_path =
+                        format!("{}/db_rescue_{}.json", BACKUP_DIR, std::process::id());
                     let _ = std::fs::create_dir_all(BACKUP_DIR);
-                    eprintln!(
-                        "ERROR: Failed to parse {}: {}",
-                        DB_PATH, e
-                    );
-                    eprintln!(
-                        "Saving unreadable db to {} — starting fresh",
-                        rescue_path
-                    );
+                    eprintln!("ERROR: Failed to parse {}: {}", DB_PATH, e);
+                    eprintln!("Saving unreadable db to {} — starting fresh", rescue_path);
                     eprintln!(
                         "Old db had {} votes — save() will refuse to overwrite until that count is exceeded",
                         raw_votes

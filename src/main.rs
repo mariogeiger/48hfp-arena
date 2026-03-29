@@ -5,12 +5,12 @@ mod models;
 mod persistence;
 
 use actix_files::Files;
-use actix_web::{web, App, HttpServer};
+use actix_web::{App, HttpServer, web};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
 
 use models::VoteEvent;
-use persistence::{load_db, AppState};
+use persistence::{AppState, load_db};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
