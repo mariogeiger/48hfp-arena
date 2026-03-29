@@ -254,7 +254,8 @@ async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> 
         let rb = ratings.get(&b).map(|r| (r.rating, r.comparisons)).unwrap_or((1500.0, 0));
         let closeness = 1.0 / (1.0 + (ra.0 - rb.0).abs() / 200.0);
         let uncertainty = 2.0 / (2.0 + ra.1 as f64 + rb.1 as f64);
-        closeness + uncertainty
+        let quality = ((ra.0 + rb.0) / 2.0 - 1400.0).max(0.0) / 200.0;
+        closeness + uncertainty + quality
     }).collect();
     drop(ratings);
 
