@@ -89,13 +89,15 @@
   .film-title { font-size: 15px; font-weight: 600; color: #fff; }
   .film-meta { font-size: 12px; color: #777; margin-top: 2px; }
 
-  .confirm-btn {
+  .selection-status {
     position: fixed; bottom: 20px; left: 16px; right: 16px;
-    padding: 16px; border-radius: 12px; border: none;
-    background: #7c6aff; color: #fff; font-size: 16px; font-weight: 700;
-    cursor: pointer; z-index: 200; transition: opacity 0.2s;
+    padding: 12px 16px; border-radius: 12px;
+    background: #1a1a24; border: 1px solid #333;
+    color: #888; font-size: 14px; font-weight: 600;
+    text-align: center; z-index: 200;
+    pointer-events: none; transition: opacity 0.3s;
   }
-  .confirm-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .selection-status.has-enough { border-color: #7c6aff44; color: #aaa; }
 
   /* PAGE 2: SWIPE */
   #page-swipe {
@@ -325,9 +327,7 @@
     </div>
   </div>
   <div class="film-list" id="film-list"></div>
-  <button class="confirm-btn" id="confirm-btn" disabled onclick="confirmSelection()">
-    Continue with 0 films
-  </button>
+  <div class="selection-status" id="selection-status">Select at least 2 films to compare</div>
 </div>
 
 <!-- PAGE 2: SWIPE -->
@@ -374,7 +374,8 @@ async function init() {
   const res = await fetch('/api/films');
   allFilms = await res.json();
   renderFilmList(allFilms);
-  updateConfirmBtn();
+  updateSelectionStatus();
+  if (selectedIds.size >= 2) saveSelection();
 }
 
 // -- Page Navigation --
@@ -405,6 +406,8 @@ function renderFilmList(films) {
   `).join('');
 }
 
+let saveTimeout = null;
+
 function toggleFilm(id, el) {
   if (selectedIds.has(id)) {
     selectedIds.delete(id);
@@ -413,7 +416,8 @@ function toggleFilm(id, el) {
     selectedIds.add(id);
     el.classList.add('selected');
   }
-  updateConfirmBtn();
+  updateSelectionStatus();
+  debounceSaveSelection();
 }
 
 function filterFilms(q) {
@@ -432,30 +436,41 @@ function selectAll() {
     selectedIds.add(id);
     el.classList.add('selected');
   });
-  updateConfirmBtn();
+  updateSelectionStatus();
+  debounceSaveSelection();
 }
 
 function deselectAll() {
   selectedIds.clear();
   document.querySelectorAll('.film-item').forEach(el => el.classList.remove('selected'));
-  updateConfirmBtn();
+  updateSelectionStatus();
+  debounceSaveSelection();
 }
 
-function updateConfirmBtn() {
-  const btn = document.getElementById('confirm-btn');
+function updateSelectionStatus() {
+  const el = document.getElementById('selection-status');
   const n = selectedIds.size;
-  btn.disabled = n < 2;
-  btn.textContent = `Continue with ${n} film${n !== 1 ? 's' : ''}`;
+  if (n < 2) {
+    el.textContent = `Select at least 2 films to compare`;
+    el.classList.remove('has-enough');
+  } else {
+    el.textContent = `${n} films selected`;
+    el.classList.add('has-enough');
+  }
 }
 
-async function confirmSelection() {
+function debounceSaveSelection() {
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(saveSelection, 500);
+}
+
+async function saveSelection() {
   localStorage.setItem('filmrank_selected', JSON.stringify([...selectedIds]));
   await fetch('/api/selection', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: USER_ID, film_ids: [...selectedIds] }),
   });
-  showPage('swipe');
 }
 
 // -- PAGE 2: Swipe Comparison --
@@ -465,10 +480,14 @@ async function loadPair() {
   const data = await res.json();
 
   if (data.error === 'unknown user') {
+    if (selectedIds.size >= 2) {
+      await saveSelection();
+      return loadPair();
+    }
     container.innerHTML = `
       <div class="swipe-done">
         <h2>Select films first</h2>
-        <p>Go back and pick the films you've watched.</p>
+        <p>Go back and pick at least 2 films you've watched.</p>
         <button onclick="showPage('select')">Select Films</button>
       </div>`;
     return;
