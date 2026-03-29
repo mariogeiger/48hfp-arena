@@ -47,17 +47,10 @@ fn canonical_pair(a: usize, b: usize) -> (usize, usize) {
     if a < b { (a, b) } else { (b, a) }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LastVote {
-    winner_id: usize,
-    loser_id: usize,
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct UserState {
     seen_films: Vec<usize>,
     compared_pairs: HashSet<(usize, usize)>,
-    vote_history: Vec<LastVote>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -253,6 +246,8 @@ struct PairRequest {
 #[derive(Deserialize)]
 struct UndoPayload {
     user_id: String,
+    winner_id: usize,
+    loser_id: usize,
 }
 
 async fn set_selection(
@@ -368,10 +363,6 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
         let mut users = data.users.lock().unwrap();
         let user = users.entry(payload.user_id.clone()).or_default();
         user.compared_pairs.insert(pair);
-        user.vote_history.push(LastVote {
-            winner_id: payload.winner_id,
-            loser_id: payload.loser_id,
-        });
     }
 
     data.save();
@@ -390,36 +381,30 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
 }
 
 async fn undo(data: web::Data<AppState>, payload: web::Json<UndoPayload>) -> HttpResponse {
-    let last_vote = {
+    let pair = canonical_pair(payload.winner_id, payload.loser_id);
+
+    {
         let mut users = data.users.lock().unwrap();
         let user = match users.get_mut(&payload.user_id) {
             Some(u) => u,
-            None => {
-                return HttpResponse::BadRequest()
-                    .json(serde_json::json!({"error": "unknown user"}));
-            }
+            None => return HttpResponse::BadRequest()
+                .json(serde_json::json!({"error": "unknown user"})),
         };
-        let lv = match user.vote_history.pop() {
-            Some(lv) => lv,
-            None => {
-                return HttpResponse::Ok()
-                    .json(serde_json::json!({"status": "nothing_to_undo"}));
-            }
-        };
-        let pair = canonical_pair(lv.winner_id, lv.loser_id);
-        user.compared_pairs.remove(&pair);
-        lv
-    };
+        if !user.compared_pairs.remove(&pair) {
+            return HttpResponse::BadRequest()
+                .json(serde_json::json!({"error": "pair not found"}));
+        }
+    }
 
     {
         let mut ratings = data.bt_ratings.lock().unwrap();
 
-        if let Some(w) = ratings.get_mut(&last_vote.winner_id) {
+        if let Some(w) = ratings.get_mut(&payload.winner_id) {
             w.comparisons = w.comparisons.saturating_sub(1);
-            let entry = w.wins_against.entry(last_vote.loser_id).or_insert(0);
+            let entry = w.wins_against.entry(payload.loser_id).or_insert(0);
             *entry = entry.saturating_sub(1);
         }
-        if let Some(l) = ratings.get_mut(&last_vote.loser_id) {
+        if let Some(l) = ratings.get_mut(&payload.loser_id) {
             l.comparisons = l.comparisons.saturating_sub(1);
         }
 
@@ -428,13 +413,7 @@ async fn undo(data: web::Data<AppState>, payload: web::Json<UndoPayload>) -> Htt
 
     data.save();
 
-    let film_a = &data.films[&last_vote.winner_id];
-    let film_b = &data.films[&last_vote.loser_id];
-    HttpResponse::Ok().json(serde_json::json!({
-        "status": "undone",
-        "a": film_a,
-        "b": film_b,
-    }))
+    HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
 async fn vote_stream(data: web::Data<AppState>) -> HttpResponse {

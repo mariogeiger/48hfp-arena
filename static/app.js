@@ -8,7 +8,7 @@ let allFilms = [];
 let selectedIds = new Set(JSON.parse(localStorage.getItem('filmrank_selected') || '[]'));
 let currentPair = null;
 let voteCount = 0;
-let undoCount = 0;
+let voteHistory = []; // [{winnerId, loserId}, ...]
 
 // -- Helpers --
 function esc(s) {
@@ -185,7 +185,7 @@ function renderPair(a, b) {
       </div>
       <div class="swipe-progress">${voteCount} comparisons made</div>
       <div class="swipe-bottom-actions">
-        <button class="undo-btn" onclick="undoVote()" ${undoCount > 0 ? '' : 'disabled'}>Undo</button>
+        <button class="undo-btn" onclick="undoVote()" ${voteHistory.length > 0 ? '' : 'disabled'}>Undo</button>
         <button class="skip-btn" onclick="loadPair()">Skip</button>
       </div>
     </div>`;
@@ -255,23 +255,22 @@ async function castVote(winnerId, loserId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: USER_ID, winner_id: winnerId, loser_id: loserId }),
   });
-  undoCount++;
+  voteHistory.push({ winnerId, loserId });
   loadPair();
 }
 
 async function undoVote() {
-  if (undoCount <= 0) return;
-  const res = await fetch('/api/undo', {
+  const last = voteHistory.pop();
+  if (!last) return;
+  await fetch('/api/undo', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: USER_ID }),
+    body: JSON.stringify({ user_id: USER_ID, winner_id: last.winnerId, loser_id: last.loserId }),
   });
-  const result = await res.json();
-  if (result.status === 'undone') {
-    voteCount = Math.max(0, voteCount - 1);
-    undoCount--;
-    renderPair(result.a, result.b);
-  }
+  voteCount = Math.max(0, voteCount - 1);
+  const filmA = allFilms.find(f => f.id === last.winnerId);
+  const filmB = allFilms.find(f => f.id === last.loserId);
+  renderPair(filmA, filmB);
 }
 
 // -- PAGE 3: Leaderboard --
