@@ -8,7 +8,7 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #0a0a0f;
+    background: #1a0f22;
     color: #e0e0e0;
     min-height: 100dvh;
     overflow-x: hidden;
@@ -19,38 +19,38 @@
 
   /* NAV */
   .nav {
-    display: flex; gap: 0; border-bottom: 1px solid #222;
-    background: #111118; position: sticky; top: 0; z-index: 100;
+    display: flex; gap: 0; border-bottom: 1px solid #2a1a35;
+    background: #241530; position: sticky; top: 0; z-index: 100;
   }
   .nav button {
     flex: 1; padding: 14px 8px; background: none; border: none;
-    color: #666; font-size: 14px; font-weight: 600; cursor: pointer;
+    color: #8a7a96; font-size: 14px; font-weight: 600; cursor: pointer;
     border-bottom: 3px solid transparent; transition: all 0.2s;
   }
-  .nav button.active { color: #7c6aff; border-bottom-color: #7c6aff; }
+  .nav button.active { color: #EAB32D; border-bottom-color: #EAB32D; }
   .nav button:disabled { opacity: 0.3; cursor: not-allowed; }
 
   /* PAGE 1: SELECTION */
   #page-select { padding: 0; }
   .select-header {
-    padding: 10px 16px 8px; background: #111118;
+    padding: 10px 16px 8px; background: #241530;
     position: sticky; top: 47px; z-index: 50;
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   }
-  .select-header p { font-size: 12px; color: #888; width: 100%; }
+  .select-header p { font-size: 12px; color: #8a7a96; width: 100%; }
   .search-box {
-    flex: 1; min-width: 0; padding: 8px 12px; background: #1a1a24; border: 1px solid #333;
+    flex: 1; min-width: 0; padding: 8px 12px; background: #2a1a35; border: 1px solid #3d2a4d;
     border-radius: 8px; color: #fff; font-size: 14px; outline: none;
   }
-  .search-box:focus { border-color: #7c6aff; }
+  .search-box:focus { border-color: #EAB32D; }
   .select-actions {
     display: flex; gap: 6px;
   }
   .select-actions button {
-    padding: 8px 10px; border-radius: 6px; border: 1px solid #333;
-    background: #1a1a24; color: #aaa; font-size: 11px; cursor: pointer; white-space: nowrap;
+    padding: 8px 10px; border-radius: 6px; border: 1px solid #3d2a4d;
+    background: #2a1a35; color: #bbb; font-size: 11px; cursor: pointer; white-space: nowrap;
   }
-  .select-actions button:hover { border-color: #7c6aff; color: #fff; }
+  .select-actions button:hover { border-color: #EAB32D; color: #fff; }
 
   .film-list {
     flex: 1; overflow-y: auto; padding: 8px 16px 100px;
@@ -60,25 +60,25 @@
     padding: 12px; margin-bottom: 4px; border-radius: 8px;
     cursor: pointer; transition: background 0.15s;
   }
-  .film-item:hover { background: #1a1a24; }
-  .film-item.selected { background: #1c1a30; }
+  .film-item:hover { background: #2a1a35; }
+  .film-item.selected { background: #332042; }
   .film-poster {
     width: 44px; height: 62px; border-radius: 6px; object-fit: cover;
-    background: #1a1a24; flex-shrink: 0;
+    background: #2a1a35; flex-shrink: 0;
   }
   .film-poster-placeholder {
     width: 44px; height: 62px; border-radius: 6px;
-    background: linear-gradient(135deg, #1a1a24, #252530);
+    background: linear-gradient(135deg, #2a1a35, #3d2a4d);
     display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; font-size: 18px; color: #444;
+    flex-shrink: 0; font-size: 18px; color: #5a4a6a;
   }
   .film-check {
-    width: 22px; height: 22px; border-radius: 6px; border: 2px solid #444;
+    width: 22px; height: 22px; border-radius: 6px; border: 2px solid #5a4a6a;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; transition: all 0.15s;
   }
   .film-item.selected .film-check {
-    background: #7c6aff; border-color: #7c6aff;
+    background: #EAB32D; border-color: #EAB32D;
   }
   .film-check::after {
     content: ''; display: none; width: 6px; height: 10px;
@@ -87,173 +87,184 @@
   .film-item.selected .film-check::after { display: block; }
   .film-info { flex: 1; min-width: 0; }
   .film-title { font-size: 15px; font-weight: 600; color: #fff; }
-  .film-meta { font-size: 12px; color: #777; margin-top: 2px; }
+  .film-meta { font-size: 12px; color: #8a7a96; margin-top: 2px; }
 
   .selection-status {
     position: fixed; bottom: 20px; left: 16px; right: 16px;
     padding: 12px 16px; border-radius: 12px;
-    background: #1a1a24; border: 1px solid #333;
-    color: #888; font-size: 14px; font-weight: 600;
+    background: #2a1a35; border: 1px solid #3d2a4d;
+    color: #8a7a96; font-size: 14px; font-weight: 600;
     text-align: center; z-index: 200;
     pointer-events: none; transition: opacity 0.3s;
   }
-  .selection-status.has-enough { border-color: #7c6aff44; color: #aaa; }
+  .selection-status.has-enough { border-color: #EAB32D44; color: #ccc; }
 
   /* PAGE 2: SWIPE */
   #page-swipe {
     align-items: center; justify-content: center; padding: 10px;
   }
   .swipe-container {
-    position: relative; width: 100%; max-width: 380px;
+    position: relative; width: 100%; max-width: 500px;
     flex: 1; display: flex; align-items: center; justify-content: center;
   }
   .swipe-card {
-    width: 100%; background: #16161f; border-radius: 16px;
-    padding: 12px 20px; text-align: center;
+    width: 100%; background: #241530; border-radius: 16px;
+    padding: 10px 10px; text-align: center;
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     touch-action: pan-y; user-select: none;
     transition: transform 0.08s ease-out, opacity 0.3s;
     position: relative;
   }
+  .swipe-pair {
+    display: flex; align-items: center; gap: 6px;
+  }
   .swipe-card .vs-label {
-    font-size: 11px; color: #555; text-transform: uppercase;
-    letter-spacing: 3px; margin: 4px 0;
+    font-size: 11px; color: #EAB32D; text-transform: uppercase;
+    letter-spacing: 2px; margin-bottom: 4px;
   }
   .swipe-film {
-    padding: 4px 0;
+    flex: 1; min-width: 0; padding: 4px 0;
   }
   .swipe-poster {
     width: 60px; height: 84px; border-radius: 6px; object-fit: cover;
-    margin: 0 auto 4px; display: block; background: #1a1a24;
+    margin: 0 auto 4px; display: block; background: #2a1a35;
   }
   .swipe-poster-placeholder {
     width: 60px; height: 84px; border-radius: 6px;
-    background: linear-gradient(135deg, #1a1a24, #252530);
+    background: linear-gradient(135deg, #2a1a35, #3d2a4d);
     margin: 0 auto 4px; display: flex; align-items: center;
-    justify-content: center; font-size: 24px; color: #333;
+    justify-content: center; font-size: 24px; color: #5a4a6a;
   }
-  .swipe-film .title { font-size: 16px; font-weight: 700; color: #fff; }
-  .swipe-film .meta { font-size: 11px; color: #888; margin-top: 2px; }
+  .swipe-film .title {
+    font-size: 14px; font-weight: 700; color: #fff;
+    overflow: hidden; text-overflow: ellipsis;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  .swipe-film .meta { font-size: 11px; color: #8a7a96; margin-top: 2px; }
+  .swipe-buttons {
+    display: flex; justify-content: space-around; margin-top: 8px;
+  }
   .swipe-arrow-btn {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 36px; height: 36px; border-radius: 50%; border: 2px solid #333;
-    background: #1a1a24; color: #888; font-size: 16px; cursor: pointer;
-    margin-top: 4px; transition: all 0.15s;
+    width: 36px; height: 36px; border-radius: 50%; border: 2px solid #3d2a4d;
+    background: #2a1a35; color: #8a7a96; font-size: 16px; cursor: pointer;
+    transition: all 0.15s;
   }
-  .swipe-arrow-btn:hover { border-color: #7c6aff; color: #fff; background: #252530; }
-  .swipe-arrow-btn.pick-a { border-color: #51cf66; color: #51cf66; }
-  .swipe-arrow-btn.pick-a:hover { background: #51cf6622; }
-  .swipe-arrow-btn.pick-b { border-color: #ff6b6b; color: #ff6b6b; }
-  .swipe-arrow-btn.pick-b:hover { background: #ff6b6b22; }
+  .swipe-arrow-btn:hover { border-color: #EAB32D; color: #fff; background: #3d2a4d; }
+  .swipe-arrow-btn.pick-a { border-color: #EAB32D; color: #EAB32D; }
+  .swipe-arrow-btn.pick-a:hover { background: #EAB32D22; }
+  .swipe-arrow-btn.pick-b { border-color: #EAB32D; color: #EAB32D; }
+  .swipe-arrow-btn.pick-b:hover { background: #EAB32D22; }
 
   .swipe-overlay {
-    position: absolute; top: 10px; font-size: 22px; font-weight: 900;
-    padding: 6px 14px; border-radius: 8px; border: 3px solid;
+    position: absolute; top: 10px; font-size: 14px; font-weight: 900;
+    padding: 6px 10px; border-radius: 8px; border: 3px solid;
     transform: rotate(-15deg); opacity: 0; pointer-events: none;
-    transition: opacity 0.1s;
+    transition: opacity 0.1s; z-index: 10; max-width: 45%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .swipe-overlay.left-o {
-    left: 20px; color: #ff6b6b; border-color: #ff6b6b;
+    left: 20px; color: #EAB32D; border-color: #EAB32D;
   }
   .swipe-overlay.right-o {
-    right: 20px; color: #51cf66; border-color: #51cf66; transform: rotate(15deg);
+    right: 20px; color: #EAB32D; border-color: #EAB32D; transform: rotate(15deg);
   }
 
   .swipe-progress {
-    margin-top: 6px; font-size: 11px; color: #555; text-align: center;
+    margin-top: 4px; font-size: 11px; color: #8a7a96; text-align: center;
   }
   .swipe-done {
     text-align: center;
   }
   .swipe-done h2 { font-size: 24px; color: #fff; margin-bottom: 8px; }
-  .swipe-done p { color: #888; margin-bottom: 20px; }
+  .swipe-done p { color: #8a7a96; margin-bottom: 20px; }
   .swipe-done button {
     padding: 14px 32px; border-radius: 10px; border: none;
-    background: #7c6aff; color: #fff; font-size: 15px; font-weight: 600;
+    background: #EAB32D; color: #1a0f22; font-size: 15px; font-weight: 600;
     cursor: pointer;
   }
 
   .swipe-bottom-actions {
-    display: flex; gap: 10px; justify-content: center; margin-top: 8px;
+    display: flex; gap: 10px; justify-content: center; margin-top: 4px;
   }
   .skip-btn, .undo-btn {
-    background: none; border: 1px solid #333;
-    color: #666; padding: 6px 16px; border-radius: 8px;
+    background: none; border: 1px solid #3d2a4d;
+    color: #8a7a96; padding: 6px 16px; border-radius: 8px;
     font-size: 12px; cursor: pointer;
   }
-  .skip-btn:hover, .undo-btn:hover { border-color: #555; color: #aaa; }
-  .undo-btn { border-color: #7c6aff44; color: #7c6aff88; }
-  .undo-btn:hover { border-color: #7c6aff; color: #7c6aff; }
+  .skip-btn:hover, .undo-btn:hover { border-color: #6B2E81; color: #ccc; }
+  .undo-btn { border-color: #EAB32D44; color: #EAB32D88; }
+  .undo-btn:hover { border-color: #EAB32D; color: #EAB32D; }
   .undo-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
   /* PAGE 3: LEADERBOARD */
   #page-board { padding: 0; }
   .board-header {
-    padding: 20px 16px 12px; background: #111118;
+    padding: 20px 16px 12px; background: #241530;
     position: sticky; top: 47px; z-index: 50;
   }
   .board-header h1 { font-size: 22px; color: #fff; }
-  .board-header p { font-size: 13px; color: #888; margin-top: 4px; }
+  .board-header p { font-size: 13px; color: #8a7a96; margin-top: 4px; }
 
   .board-list { padding: 8px 16px 40px; }
   .board-item {
     display: flex; align-items: center; gap: 12px;
-    padding: 14px 12px; border-bottom: 1px solid #1a1a24;
+    padding: 14px 12px; border-bottom: 1px solid #2a1a35;
   }
   .board-rank {
     width: 32px; height: 32px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 14px; flex-shrink: 0;
-    background: #1a1a24; color: #888;
+    background: #2a1a35; color: #8a7a96;
   }
-  .board-item:nth-child(1) .board-rank { background: #ffd43b22; color: #ffd43b; }
+  .board-item:nth-child(1) .board-rank { background: #EAB32D22; color: #EAB32D; }
   .board-item:nth-child(2) .board-rank { background: #adb5bd22; color: #adb5bd; }
   .board-item:nth-child(3) .board-rank { background: #e8845422; color: #e88454; }
   .board-poster {
     width: 36px; height: 50px; border-radius: 4px; object-fit: cover;
-    background: #1a1a24; flex-shrink: 0;
+    background: #2a1a35; flex-shrink: 0;
   }
   .board-poster-placeholder {
     width: 36px; height: 50px; border-radius: 4px;
-    background: linear-gradient(135deg, #1a1a24, #252530);
+    background: linear-gradient(135deg, #2a1a35, #3d2a4d);
     display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; font-size: 14px; color: #333;
+    flex-shrink: 0; font-size: 14px; color: #5a4a6a;
   }
   .board-info { flex: 1; min-width: 0; }
   .board-title { font-size: 15px; font-weight: 600; color: #fff; }
-  .board-meta { font-size: 12px; color: #777; margin-top: 2px; }
+  .board-meta { font-size: 12px; color: #8a7a96; margin-top: 2px; }
   .board-stats { text-align: right; flex-shrink: 0; }
-  .board-elo { font-size: 18px; font-weight: 700; color: #7c6aff; }
-  .board-record { font-size: 11px; color: #666; margin-top: 2px; }
+  .board-elo { font-size: 18px; font-weight: 700; color: #EAB32D; }
+  .board-record { font-size: 11px; color: #8a7a96; margin-top: 2px; }
 
   .board-empty {
-    text-align: center; padding: 60px 20px; color: #555;
+    text-align: center; padding: 60px 20px; color: #8a7a96;
   }
-  .board-empty h3 { color: #888; margin-bottom: 8px; }
+  .board-empty h3 { color: #ccc; margin-bottom: 8px; }
 
   /* PAGE 4: STATS */
   #page-stats { padding: 0; }
   .stats-header {
-    padding: 20px 16px 12px; background: #111118;
+    padding: 20px 16px 12px; background: #241530;
     position: sticky; top: 47px; z-index: 50;
   }
   .stats-header h1 { font-size: 22px; color: #fff; }
-  .stats-header p { font-size: 13px; color: #888; margin-top: 4px; }
+  .stats-header p { font-size: 13px; color: #8a7a96; margin-top: 4px; }
 
   .stats-grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 12px; padding: 16px;
   }
   .stat-card {
-    background: #16161f; border-radius: 12px; padding: 20px 16px;
+    background: #241530; border-radius: 12px; padding: 20px 16px;
     text-align: center;
   }
   .stat-value {
-    font-size: 32px; font-weight: 800; color: #7c6aff;
+    font-size: 32px; font-weight: 800; color: #EAB32D;
     line-height: 1;
   }
   .stat-label {
-    font-size: 12px; color: #888; margin-top: 8px;
+    font-size: 12px; color: #8a7a96; margin-top: 8px;
     text-transform: uppercase; letter-spacing: 1px;
   }
 
@@ -261,8 +272,8 @@
     padding: 0 16px 24px;
   }
   .stats-section h3 {
-    font-size: 15px; color: #aaa; margin-bottom: 12px;
-    padding-top: 8px; border-top: 1px solid #1a1a24;
+    font-size: 15px; color: #ccc; margin-bottom: 12px;
+    padding-top: 8px; border-top: 1px solid #2a1a35;
   }
   .stats-bar-row {
     display: flex; align-items: center; gap: 10px;
@@ -273,15 +284,15 @@
     overflow: hidden; text-overflow: ellipsis;
   }
   .stats-bar-track {
-    flex: 1; height: 20px; background: #1a1a24; border-radius: 4px;
+    flex: 1; height: 20px; background: #2a1a35; border-radius: 4px;
     overflow: hidden;
   }
   .stats-bar-fill {
-    height: 100%; background: #7c6aff; border-radius: 4px;
+    height: 100%; background: #6B2E81; border-radius: 4px;
     transition: width 0.5s ease;
   }
   .stats-bar-value {
-    flex: 0 0 36px; text-align: right; color: #888; font-size: 12px;
+    flex: 0 0 36px; text-align: right; color: #8a7a96; font-size: 12px;
   }
 
   /* VOTE NOTIFICATIONS */
@@ -291,7 +302,7 @@
     padding: 12px; gap: 8px; pointer-events: none; z-index: 9999;
   }
   .vote-toast {
-    background: #1e1e2e; border: 1px solid #333; border-left: 3px solid #7c6aff;
+    background: #241530; border: 1px solid #3d2a4d; border-left: 3px solid #EAB32D;
     padding: 10px 16px; border-radius: 8px; color: #ccc; font-size: 13px;
     max-width: 400px; width: 100%;
     animation: toast-in 0.3s ease, toast-out 0.4s ease 3.6s forwards;
@@ -520,20 +531,24 @@ function renderPair(a, b) {
   container.innerHTML = `
     <div>
       <div class="swipe-card" id="swipe-card">
-        <div class="swipe-overlay left-o" id="overlay-left">B</div>
-        <div class="swipe-overlay right-o" id="overlay-right">A</div>
-        <div class="swipe-film">
-          ${posterImg(a.poster_url, 'swipe-poster', 'swipe-poster-placeholder')}
-          <div class="title">${esc(a.title)}</div>
-          <div class="meta">${esc(a.team)}${a.city ? ' &middot; ' + esc(a.city) : ''}</div>
-          <button class="swipe-arrow-btn pick-a" onclick="castVote(currentPair.a.id, currentPair.b.id)" title="Pick this one">&rarr;</button>
-        </div>
+        <div class="swipe-overlay left-o" id="overlay-left">${esc(b.title)}</div>
+        <div class="swipe-overlay right-o" id="overlay-right">${esc(a.title)}</div>
         <div class="vs-label">VS</div>
-        <div class="swipe-film">
-          ${posterImg(b.poster_url, 'swipe-poster', 'swipe-poster-placeholder')}
-          <div class="title">${esc(b.title)}</div>
-          <div class="meta">${esc(b.team)}${b.city ? ' &middot; ' + esc(b.city) : ''}</div>
-          <button class="swipe-arrow-btn pick-b" onclick="castVote(currentPair.b.id, currentPair.a.id)" title="Pick this one">&larr;</button>
+        <div class="swipe-pair">
+          <div class="swipe-film">
+            ${posterImg(a.poster_url, 'swipe-poster', 'swipe-poster-placeholder')}
+            <div class="title">${esc(a.title)}</div>
+            <div class="meta">${esc(a.team)}${a.city ? ' &middot; ' + esc(a.city) : ''}</div>
+          </div>
+          <div class="swipe-film">
+            ${posterImg(b.poster_url, 'swipe-poster', 'swipe-poster-placeholder')}
+            <div class="title">${esc(b.title)}</div>
+            <div class="meta">${esc(b.team)}${b.city ? ' &middot; ' + esc(b.city) : ''}</div>
+          </div>
+        </div>
+        <div class="swipe-buttons">
+          <button class="swipe-arrow-btn pick-a" onclick="castVote(currentPair.a.id, currentPair.b.id)" title="Pick left">&larr;</button>
+          <button class="swipe-arrow-btn pick-b" onclick="castVote(currentPair.b.id, currentPair.a.id)" title="Pick right">&rarr;</button>
         </div>
       </div>
       <div class="swipe-progress">${voteCount} comparisons made</div>
