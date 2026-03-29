@@ -168,15 +168,21 @@ fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
         return;
     }
 
+    // Map film_id → index into old_scores; allocated once, reused each iteration.
+    let idx: HashMap<usize, usize> = active_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+    let mut old_scores: Vec<f64> = active_ids.iter().map(|&id| ratings[&id].score).collect();
+
     for _ in 0..500 {
-        let old_scores: HashMap<usize, f64> = active_ids.iter()
-            .map(|&id| (id, ratings[&id].score))
-            .collect();
+        // Snapshot scores at the start of this iteration.
+        for (pos, &id) in active_ids.iter().enumerate() {
+            old_scores[pos] = ratings[&id].score;
+        }
 
         let mut max_rel_change = 0.0_f64;
 
         for &i in &ranked_ids {
             let w_i = ratings[&i].wins as f64;
+            let score_i = old_scores[idx[&i]];
 
             let denom: f64 = active_ids.iter()
                 .filter(|&&j| j != i)
@@ -185,7 +191,7 @@ fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
                         ratings[&i].wins_against.get(&j).copied().unwrap_or(0) as f64
                         + ratings[&j].wins_against.get(&i).copied().unwrap_or(0) as f64;
                     if n_ij > 0.0 {
-                        Some(n_ij / (old_scores[&i] + old_scores[&j]))
+                        Some(n_ij / (score_i + old_scores[idx[&j]]))
                     } else {
                         None
                     }
@@ -194,13 +200,12 @@ fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
 
             if denom > 0.0 {
                 let new_score = w_i / denom;
-                let rel_change = (new_score - old_scores[&i]).abs() / old_scores[&i];
+                let rel_change = (new_score - score_i).abs() / score_i;
                 max_rel_change = max_rel_change.max(rel_change);
                 ratings.get_mut(&i).unwrap().score = new_score;
             }
         }
 
-        // Normalize: geometric mean of ranked films = 1.
         let log_mean: f64 = ranked_ids.iter()
             .map(|&id| ratings[&id].score.ln())
             .sum::<f64>()
