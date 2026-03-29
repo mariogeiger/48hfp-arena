@@ -262,7 +262,7 @@ async function castVote(winnerId, loserId) {
 async function undoVote() {
   const last = voteHistory.pop();
   if (!last) return;
-  await fetch('/api/undo', {
+  await fetch('/api/unvote', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: USER_ID, winner_id: last.winnerId, loser_id: last.loserId }),
@@ -462,7 +462,7 @@ function renderGlobalMatrix(films, wins) {
 }
 
 async function matrixUnvote(winnerId, loserId) {
-  await fetch('/api/undo', {
+  await fetch('/api/unvote', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: USER_ID, winner_id: winnerId, loser_id: loserId }),

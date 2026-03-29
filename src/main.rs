@@ -270,7 +270,7 @@ struct PairRequest {
 }
 
 #[derive(Deserialize)]
-struct UndoPayload {
+struct UnvotePayload {
     user_id: String,
     winner_id: usize,
     loser_id: usize,
@@ -431,7 +431,7 @@ async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> Htt
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
-async fn undo(data: web::Data<AppState>, payload: web::Json<UndoPayload>) -> HttpResponse {
+async fn unvote(data: web::Data<AppState>, payload: web::Json<UnvotePayload>) -> HttpResponse {
     let pair = canonical_pair(payload.winner_id, payload.loser_id);
 
     {
@@ -705,7 +705,7 @@ async fn main() -> std::io::Result<()> {
             .route("/api/selection", web::post().to(set_selection))
             .route("/api/pair", web::get().to(get_pair))
             .route("/api/vote", web::post().to(vote))
-            .route("/api/undo", web::post().to(undo))
+            .route("/api/unvote", web::post().to(unvote))
             .route("/api/vote/stream", web::get().to(vote_stream))
             .route("/api/leaderboard", web::get().to(leaderboard))
             .route("/api/stats", web::get().to(stats))
