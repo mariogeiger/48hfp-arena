@@ -44,7 +44,7 @@ async function init() {
   ]);
   allFilms = await filmsRes.json();
   const board = await boardRes.json();
-  const rankById = new Map(board.map((item, i) => [item.id, i]));
+  const rankById = new Map(board.map((item, i) => [item.film_id, i]));
   allFilms.sort((a, b) => (rankById.get(a.id) ?? Infinity) - (rankById.get(b.id) ?? Infinity));
   renderFilmList(allFilms);
   updateSelectionStatus();
