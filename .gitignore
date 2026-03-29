@@ -1,2 +1,4 @@
 /target
 db.json
+db.json.tmp
+backups/
