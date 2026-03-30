@@ -415,7 +415,7 @@ pub async fn user_contributions(
 
     let mut entries: Vec<serde_json::Value> = users
         .iter()
-        .filter(|(_, state)| !state.seen_films.is_empty() || !state.compared_pairs.is_empty())
+        .filter(|(_, state)| !state.compared_pairs.is_empty())
         .map(|(uid, state)| {
             serde_json::json!({
                 "user_id": uid,
