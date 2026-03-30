@@ -47,6 +47,7 @@ pub struct VotePayload {
 #[derive(Deserialize)]
 pub struct PairRequest {
     pub user_id: String,
+    pub focus_film: Option<usize>,
 }
 
 #[derive(Deserialize)]

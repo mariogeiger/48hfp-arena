@@ -13,6 +13,7 @@ let selectedIds = new Set(
 let currentPair = null;
 let voteCount = 0;
 let voteHistory = []; // [{winnerId, loserId}, ...]
+let focusFilmId = null; // pinned film for compare mode
 
 // -- Helpers --
 function esc(s) {
@@ -165,24 +166,52 @@ async function saveSelection() {
 }
 
 // -- PAGE 2: Swipe Comparison --
+function renderFocusDropdown() {
+  const selected = allFilms.filter((f) => selectedIds.has(f.id));
+  const options = selected
+    .map(
+      (f) =>
+        `<option value="${f.id}" ${f.id === focusFilmId ? "selected" : ""}>${esc(f.title)}</option>`,
+    )
+    .join("");
+  return `<div class="focus-picker">
+    <label for="focus-film">Compare against:</label>
+    <select id="focus-film" onchange="setFocusFilm(this.value)">
+      <option value="">Random pairs</option>
+      ${options}
+    </select>
+  </div>`;
+}
+
+function setFocusFilm(val) {
+  focusFilmId = val ? parseInt(val) : null;
+  loadPair();
+}
+
 async function loadPair() {
   const container = document.getElementById("swipe-container");
-  const res = await fetch(`/api/pair?user_id=${USER_ID}`);
+  let url = `/api/pair?user_id=${USER_ID}`;
+  if (focusFilmId) url += `&focus_film=${focusFilmId}`;
+  const res = await fetch(url);
   const data = await res.json();
 
   voteCount = data.votes || 0;
 
   if (data.done) {
     const notEnough = selectedIds.size < 2;
+    const focusDone = focusFilmId && !notEnough;
     container.innerHTML = `
+      ${renderFocusDropdown()}
       <div class="swipe-done">
         <h2>${notEnough ? "Select films first" : "All done!"}</h2>
         <p>${
           notEnough
             ? "Go back and pick at least 2 films you've watched."
-            : `You've compared all possible pairs. (${voteCount} votes cast)`
+            : focusDone
+              ? "You've compared this film against all others."
+              : `You've compared all possible pairs. (${voteCount} votes cast)`
         }</p>
-        <button onclick="showPage('${notEnough ? "select" : "board"}')">${notEnough ? "Select Films" : "View Leaderboard"}</button>
+        <button onclick="${focusDone ? "setFocusFilm('')" : `showPage('${notEnough ? "select" : "board"}')`}">${notEnough ? "Select Films" : focusDone ? "Compare All" : "View Leaderboard"}</button>
       </div>`;
     return;
   }
@@ -195,6 +224,7 @@ function renderPair(a, b) {
   currentPair = { a, b };
   document.getElementById("swipe-container").innerHTML = `
     <div>
+      ${renderFocusDropdown()}
       <div class="vs-badge">VS</div>
       <div class="swipe-arena" id="swipe-arena">
         <div class="film-card" id="film-a">
