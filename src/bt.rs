@@ -127,10 +127,8 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
     }
 }
 
-/// Convert a Bradley-Terry strength β to an ELO-equivalent display rating.
-/// With the normalization β̄ = 1 (geometric mean), the average film scores 1500.
 pub fn bt_score_to_display(score: f64) -> f64 {
-    400.0 * score.max(1e-10).log10() + 1500.0
+    ((1.0 + score).log2() * 500.0).round()
 }
 
 /// Compute D-optimal Fisher Information scores for candidate pairs.

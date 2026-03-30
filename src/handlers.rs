@@ -440,7 +440,7 @@ pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
                 "team": film.map(|f| f.team.as_str()).unwrap_or("?"),
                 "city": film.map(|f| f.city.as_str()).unwrap_or("?"),
                 "poster_url": film.map(|f| f.poster_url.as_str()).unwrap_or(""),
-                "rating": (bt_score_to_display(r.score) * 10.0).round() / 10.0,
+                "rating": bt_score_to_display(r.score),
                 "wins": r.wins(),
                 "losses": r.losses(),
                 "comparisons": r.comparisons,
@@ -487,7 +487,7 @@ pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
         let title = film.map(|f| f.title.as_str()).unwrap_or("?");
         let team = film.map(|f| f.team.as_str()).unwrap_or("?");
         let city = film.map(|f| f.city.as_str()).unwrap_or("?");
-        let rating = (bt_score_to_display(r.score) * 10.0).round() / 10.0;
+        let rating = bt_score_to_display(r.score);
         // Quote fields that may contain commas
         csv.push_str(&format!(
             "{},\"{}\",\"{}\",\"{}\",{},{},{},{}\n",
