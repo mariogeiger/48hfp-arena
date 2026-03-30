@@ -450,3 +450,63 @@ pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
 
     HttpResponse::Ok().json(board)
 }
+
+pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
+    const MIN_VOTES: u32 = 3;
+    const MIN_VOTERS: usize = 2;
+
+    let ratings = data.bt_ratings.lock().unwrap();
+    let users = data.users.lock().unwrap();
+
+    let mut voters_per_film: HashMap<usize, HashSet<&String>> = HashMap::new();
+    for (user_id, state) in users.iter() {
+        for pair_key in state.vote_outcomes.keys() {
+            let parts: Vec<&str> = pair_key.split(',').collect();
+            if let (Some(Ok(a)), Some(Ok(b))) = (
+                parts.first().map(|s| s.parse::<usize>()),
+                parts.get(1).map(|s| s.parse::<usize>()),
+            ) {
+                voters_per_film.entry(a).or_default().insert(user_id);
+                voters_per_film.entry(b).or_default().insert(user_id);
+            }
+        }
+    }
+
+    let mut ranked: Vec<&BtRating> = ratings
+        .values()
+        .filter(|r| {
+            r.comparisons >= MIN_VOTES
+                && voters_per_film.get(&r.film_id).map_or(0, |s| s.len()) >= MIN_VOTERS
+        })
+        .collect();
+    ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+
+    let mut csv = String::from("Rank,Title,Team,City,Rating,Wins,Losses,Comparisons\n");
+    for (i, r) in ranked.iter().enumerate() {
+        let film = data.films.get(&r.film_id);
+        let title = film.map(|f| f.title.as_str()).unwrap_or("?");
+        let team = film.map(|f| f.team.as_str()).unwrap_or("?");
+        let city = film.map(|f| f.city.as_str()).unwrap_or("?");
+        let rating = (bt_score_to_display(r.score) * 10.0).round() / 10.0;
+        // Quote fields that may contain commas
+        csv.push_str(&format!(
+            "{},\"{}\",\"{}\",\"{}\",{},{},{},{}\n",
+            i + 1,
+            title.replace('"', "\"\""),
+            team.replace('"', "\"\""),
+            city.replace('"', "\"\""),
+            rating,
+            r.wins(),
+            r.losses(),
+            r.comparisons,
+        ));
+    }
+
+    HttpResponse::Ok()
+        .content_type("text/csv; charset=utf-8")
+        .insert_header((
+            "Content-Disposition",
+            "inline; filename=\"leaderboard.csv\"",
+        ))
+        .body(csv)
+}

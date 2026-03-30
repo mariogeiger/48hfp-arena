@@ -7,6 +7,8 @@ mod persistence;
 use actix_files::Files;
 use actix_web::{App, HttpServer, web};
 use std::collections::HashMap;
+use std::net::TcpListener;
+use std::os::unix::io::FromRawFd;
 use tokio::sync::broadcast;
 
 use models::VoteEvent;
@@ -26,7 +28,7 @@ async fn main() -> std::io::Result<()> {
 
     println!("Server running at http://localhost:4848");
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
             .route("/api/films", web::get().to(handlers::get_films))
@@ -36,13 +38,28 @@ async fn main() -> std::io::Result<()> {
             .route("/api/unvote", web::post().to(handlers::unvote))
             .route("/api/vote/stream", web::get().to(handlers::vote_stream))
             .route("/api/leaderboard", web::get().to(handlers::leaderboard))
+            .route(
+                "/api/leaderboard.csv",
+                web::get().to(handlers::leaderboard_csv),
+            )
             .route("/api/stats", web::get().to(handlers::stats))
             .route("/api/user-matrix", web::get().to(handlers::user_matrix))
             .route("/api/global-matrix", web::get().to(handlers::global_matrix))
             .service(Files::new("/", "./static").index_file("index.html"))
     })
-    .bind("0.0.0.0:4848")?
-    .shutdown_timeout(5)
-    .run()
-    .await
+    .shutdown_timeout(1);
+
+    // Use systemd socket activation if LISTEN_FDS is set, otherwise bind directly
+    let server = if std::env::var("LISTEN_FDS")
+        .map(|v| v.parse::<u32>().unwrap_or(0))
+        .unwrap_or(0)
+        >= 1
+    {
+        let listener = unsafe { TcpListener::from_raw_fd(3) };
+        server.listen(listener)?
+    } else {
+        server.bind("0.0.0.0:4848")?
+    };
+
+    server.run().await
 }

@@ -211,11 +211,13 @@ function renderPair(a, b) {
           ${posterImg(a.poster_url)}
           <div class="title">${esc(a.title)}</div>
           <div class="meta">${filmMeta(a)}</div>
+          <button class="deselect-btn" onclick="deselectAndSkip(${a.id}, event)">Haven't seen it</button>
         </div>
         <div class="film-card" id="film-b">
           ${posterImg(b.poster_url)}
           <div class="title">${esc(b.title)}</div>
           <div class="meta">${filmMeta(b)}</div>
+          <button class="deselect-btn" onclick="deselectAndSkip(${b.id}, event)">Haven't seen it</button>
         </div>
       </div>
       <div class="swipe-buttons">
@@ -403,6 +405,16 @@ async function undoVote() {
   const filmA = allFilms.find((f) => f.id === last.winnerId);
   const filmB = allFilms.find((f) => f.id === last.loserId);
   renderPair(filmA, filmB);
+}
+
+async function deselectAndSkip(filmId, event) {
+  event.stopPropagation();
+  selectedIds.delete(filmId);
+  const el = document.querySelector(`.film-item[data-id="${filmId}"]`);
+  if (el) el.classList.remove("selected");
+  updateSelectionStatus();
+  await saveSelection();
+  loadPair();
 }
 
 // -- PAGE 3: Leaderboard --
@@ -797,6 +809,13 @@ function initVoteStream() {
   const es = new EventSource("/api/vote/stream");
   es.onmessage = (e) => {
     const data = JSON.parse(e.data);
+    // Refresh active data pages on any vote
+    if (document.getElementById("page-board").classList.contains("active")) {
+      loadLeaderboard();
+    }
+    if (document.getElementById("page-more").classList.contains("active")) {
+      loadMore();
+    }
     if (data.user_id === USER_ID) return;
     const container = document.getElementById("toast-container");
     const toast = document.createElement("div");

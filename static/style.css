@@ -319,6 +319,20 @@ body {
   color: #8a7a96;
   margin-top: 2px;
 }
+.deselect-btn {
+  margin-top: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  background: none;
+  border: 1px solid #3d2a4d;
+  border-radius: 4px;
+  color: #8a7a96;
+  cursor: pointer;
+}
+.deselect-btn:hover {
+  border-color: #e74c3c;
+  color: #e74c3c;
+}
 .swipe-buttons {
   display: flex;
   justify-content: space-around;
@@ -498,6 +512,15 @@ body {
 .board-empty h3 {
   color: #ccc;
   margin-bottom: 8px;
+}
+
+.board-export {
+  text-align: center;
+  padding: 16px;
+}
+.board-export a {
+  color: #8a7a96;
+  font-size: 0.85rem;
 }
 
 /* PAGE 4: MORE */
