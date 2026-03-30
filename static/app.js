@@ -167,6 +167,8 @@ async function saveSelection() {
 
 // -- PAGE 2: Swipe Comparison --
 function renderFocusDropdown() {
+  const container = document.getElementById("focus-picker-container");
+  if (!container) return;
   const selected = allFilms.filter((f) => selectedIds.has(f.id));
   const options = selected
     .map(
@@ -174,7 +176,7 @@ function renderFocusDropdown() {
         `<option value="${f.id}" ${f.id === focusFilmId ? "selected" : ""}>${esc(f.title)}</option>`,
     )
     .join("");
-  return `<div class="focus-picker">
+  container.innerHTML = `<div class="focus-picker">
     <label for="focus-film">Compare against:</label>
     <select id="focus-film" onchange="setFocusFilm(this.value)">
       <option value="">Random pairs</option>
@@ -190,6 +192,7 @@ function setFocusFilm(val) {
 
 async function loadPair() {
   const container = document.getElementById("swipe-container");
+  renderFocusDropdown();
   let url = `/api/pair?user_id=${USER_ID}`;
   if (focusFilmId) url += `&focus_film=${focusFilmId}`;
   const res = await fetch(url);
@@ -201,7 +204,6 @@ async function loadPair() {
     const notEnough = selectedIds.size < 2;
     const focusDone = focusFilmId && !notEnough;
     container.innerHTML = `
-      ${renderFocusDropdown()}
       <div class="swipe-done">
         <h2>${notEnough ? "Select films first" : "All done!"}</h2>
         <p>${
@@ -224,7 +226,6 @@ function renderPair(a, b) {
   currentPair = { a, b };
   document.getElementById("swipe-container").innerHTML = `
     <div>
-      ${renderFocusDropdown()}
       <div class="vs-badge">VS</div>
       <div class="swipe-arena" id="swipe-arena">
         <div class="film-card" id="film-a">

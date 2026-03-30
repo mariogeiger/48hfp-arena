@@ -263,12 +263,18 @@ body {
   overflow: hidden;
 }
 /* Focus film picker */
+#focus-picker-container {
+  width: 100%;
+  max-width: 500px;
+  align-self: center;
+  flex-shrink: 0;
+}
 .focus-picker {
   display: flex;
   align-items: center;
   gap: 8px;
   justify-content: center;
-  margin-bottom: 6px;
+  padding: 8px 10px 0;
 }
 .focus-picker label {
   font-size: 12px;
