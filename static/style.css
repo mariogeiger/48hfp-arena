@@ -591,6 +591,14 @@ body.swipe-active {
   color: var(--text);
   margin-bottom: 8px;
 }
+.board-video {
+  color: var(--purple);
+  text-decoration: none;
+  font-weight: 600;
+}
+.board-video:hover {
+  text-decoration: underline;
+}
 .board-export {
   text-align: center;
   padding: 16px;

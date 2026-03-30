@@ -472,7 +472,7 @@ function renderBoard(state, prev) {
           ${posterHtml(item.poster_url)}
           <div class="board-info">
             <div class="board-title">${esc(item.title)}</div>
-            <div class="board-meta">${metaHtml(item)}</div>
+            <div class="board-meta">${metaHtml(item)}${item.video_url ? ` &middot; <a href="${esc(item.video_url)}" target="_blank" class="board-video">Watch</a>` : ""}</div>
           </div>
           <div class="board-stats">
             <div class="board-score">${Math.round(item.rating)}</div>

@@ -8,6 +8,8 @@ pub struct Film {
     pub team: String,
     pub city: String,
     pub poster_url: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub video_url: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
