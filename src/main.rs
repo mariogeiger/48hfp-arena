@@ -43,6 +43,10 @@ async fn main() -> std::io::Result<()> {
                 web::get().to(handlers::leaderboard_csv),
             )
             .route("/api/stats", web::get().to(handlers::stats))
+            .route(
+                "/api/user-contributions",
+                web::get().to(handlers::user_contributions),
+            )
             .route("/api/user-matrix", web::get().to(handlers::user_matrix))
             .route("/api/global-matrix", web::get().to(handlers::global_matrix))
             .service(Files::new("/", "./static").index_file("index.html"))

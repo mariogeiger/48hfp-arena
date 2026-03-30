@@ -32,16 +32,6 @@ function filmMeta(f) {
   return `${esc(f.team)}${f.city ? " &middot; " + esc(f.city) : ""}`;
 }
 
-function barRow(label, value, fraction) {
-  return `<div class="stats-bar-row">
-    <div class="stats-bar-label" title="${esc(label)}">${esc(label)}</div>
-    <div class="stats-bar-track">
-      <div class="stats-bar-fill" style="width: ${(fraction * 100).toFixed(1)}%"></div>
-    </div>
-    <div class="stats-bar-value">${value}</div>
-  </div>`;
-}
-
 // -- Init --
 async function init() {
   const [filmsRes, boardRes] = await Promise.all([
@@ -464,7 +454,7 @@ async function loadLeaderboard() {
 
 // -- PAGE 4: More --
 async function loadMore() {
-  await loadStats();
+  await Promise.all([loadStats(), loadUserContributions()]);
   await Promise.all([loadUserMatrix(), loadGlobalMatrix()]);
 }
 
@@ -473,16 +463,12 @@ async function loadStats() {
   const s = await res.json();
   const container = document.getElementById("stats-content");
 
-  const maxSelected =
-    s.most_selected_films.length > 0 ? s.most_selected_films[0].count : 1;
-
   container.innerHTML = `
     <div class="stats-grid">
       ${[
         [s.total_votes, "Total Votes"],
         [s.active_users, "Active Voters"],
-        [s.total_users, "Total Users"],
-        [s.avg_votes_per_user, "Avg Votes / User"],
+        [s.total_users, "Total Visitors"],
         [s.films_with_votes, "Films Voted On"],
         [s.total_films, "Total Films"],
       ]
@@ -495,28 +481,39 @@ async function loadStats() {
         )
         .join("")}
     </div>
-    <div class="stats-section">
-      <h3>Most Selected Films</h3>
-      ${s.most_selected_films.map((f) => barRow(f.title, f.count, f.count / maxSelected)).join("")}
-    </div>
-    ${
-      s.vote_distribution.length > 0
-        ? `
-    <div class="stats-section">
-      <h3>Votes Per User Distribution</h3>
-      ${s.vote_distribution
-        .map((d) =>
-          barRow(
-            `${d.votes} vote${d.votes !== 1 ? "s" : ""}`,
-            d.users,
-            d.users / s.active_users,
-          ),
-        )
-        .join("")}
-    </div>`
-        : ""
-    }
   `;
+}
+
+async function loadUserContributions() {
+  const res = await fetch(`/api/user-contributions?user_id=${USER_ID}`);
+  const data = await res.json();
+  const container = document.getElementById("contributions-content");
+
+  if (data.length === 0) {
+    container.innerHTML = '<p class="matrix-empty">No contributions yet.</p>';
+    return;
+  }
+
+  const maxVotes = Math.max(...data.map((u) => u.votes), 1);
+
+  container.innerHTML = data
+    .map(
+      (u, i) => `
+    <div class="contrib-item${u.is_you ? " contrib-you" : ""}">
+      <div class="contrib-rank">${i + 1}</div>
+      <div class="contrib-info">
+        <div class="contrib-label">${esc(u.label)}</div>
+        <div class="contrib-bar-track">
+          <div class="contrib-bar-fill" style="width: ${((u.votes / maxVotes) * 100).toFixed(1)}%"></div>
+        </div>
+      </div>
+      <div class="contrib-stats">
+        <div class="contrib-votes">${u.votes}</div>
+        <div class="contrib-detail">${u.films_selected} films</div>
+      </div>
+    </div>`,
+    )
+    .join("");
 }
 
 // -- Matrix Rendering --

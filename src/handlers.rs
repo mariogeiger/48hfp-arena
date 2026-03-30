@@ -247,59 +247,12 @@ pub async fn stats(data: web::Data<AppState>) -> HttpResponse {
     let films_with_votes = ratings.values().filter(|r| r.comparisons > 0).count();
     let total_films = data.films.len();
 
-    let avg_votes_per_user = if active_users > 0 {
-        total_votes as f64 / active_users as f64
-    } else {
-        0.0
-    };
-
-    let mut films_selected_count: HashMap<usize, u32> = HashMap::new();
-    for user in users.values() {
-        for &fid in &user.seen_films {
-            *films_selected_count.entry(fid).or_insert(0) += 1;
-        }
-    }
-    let most_selected: Vec<serde_json::Value> = {
-        let mut entries: Vec<_> = films_selected_count.iter().collect();
-        entries.sort_by(|a, b| b.1.cmp(a.1));
-        entries
-            .iter()
-            .take(10)
-            .map(|&(&fid, &count)| {
-                let title = data
-                    .films
-                    .get(&fid)
-                    .map(|f| f.title.as_str())
-                    .unwrap_or("?");
-                serde_json::json!({"film_id": fid, "title": title, "count": count})
-            })
-            .collect()
-    };
-
-    let mut vote_dist: Vec<(usize, u32)> = {
-        let mut counts = HashMap::<usize, u32>::new();
-        for u in users.values() {
-            if !u.compared_pairs.is_empty() {
-                *counts.entry(u.compared_pairs.len()).or_default() += 1;
-            }
-        }
-        counts.into_iter().collect()
-    };
-    vote_dist.sort_by_key(|&(votes, _)| votes);
-    let vote_distribution: Vec<serde_json::Value> = vote_dist
-        .iter()
-        .map(|&(votes, users)| serde_json::json!({"votes": votes, "users": users}))
-        .collect();
-
     HttpResponse::Ok().json(serde_json::json!({
         "total_users": total_users,
         "active_users": active_users,
         "total_votes": total_votes,
         "total_films": total_films,
         "films_with_votes": films_with_votes,
-        "avg_votes_per_user": (avg_votes_per_user * 10.0).round() / 10.0,
-        "most_selected_films": most_selected,
-        "vote_distribution": vote_distribution,
     }))
 }
 
@@ -449,6 +402,53 @@ pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
         .collect();
 
     HttpResponse::Ok().json(board)
+}
+
+pub async fn user_contributions(
+    data: web::Data<AppState>,
+    query: web::Query<PairRequest>,
+) -> HttpResponse {
+    let users = data.users.lock().unwrap();
+
+    let mut entries: Vec<serde_json::Value> = users
+        .iter()
+        .filter(|(_, state)| !state.seen_films.is_empty() || !state.compared_pairs.is_empty())
+        .map(|(uid, state)| {
+            serde_json::json!({
+                "user_id": uid,
+                "is_you": *uid == query.user_id,
+                "films_selected": state.seen_films.len(),
+                "votes": state.compared_pairs.len(),
+            })
+        })
+        .collect();
+
+    // Sort by votes descending, then films_selected descending
+    entries.sort_by(|a, b| {
+        let va = a["votes"].as_u64().unwrap_or(0);
+        let vb = b["votes"].as_u64().unwrap_or(0);
+        vb.cmp(&va).then_with(|| {
+            let fa = a["films_selected"].as_u64().unwrap_or(0);
+            let fb = b["films_selected"].as_u64().unwrap_or(0);
+            fb.cmp(&fa)
+        })
+    });
+
+    // Replace user_ids with anonymous labels for privacy
+    for (i, entry) in entries.iter_mut().enumerate() {
+        let is_you = entry["is_you"].as_bool().unwrap_or(false);
+        entry["label"] = serde_json::json!(if is_you {
+            "You".to_string()
+        } else {
+            format!("User {}", i + 1)
+        });
+        // Remove real user_id from response
+        if let Some(obj) = entry.as_object_mut() {
+            obj.remove("user_id");
+        }
+    }
+
+    HttpResponse::Ok().json(entries)
 }
 
 pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {

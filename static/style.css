@@ -595,6 +595,86 @@ body {
   font-size: 12px;
 }
 
+/* USER CONTRIBUTIONS */
+.contrib-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #2a1a35;
+}
+.contrib-item.contrib-you {
+  background: #2a1a35;
+  border-radius: 8px;
+  padding: 10px;
+  border-bottom: none;
+  margin-bottom: 2px;
+}
+.contrib-rank {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+  background: #2a1a35;
+  color: #8a7a96;
+}
+.contrib-you .contrib-rank {
+  background: #eab32d22;
+  color: #eab32d;
+}
+.contrib-info {
+  flex: 1;
+  min-width: 0;
+}
+.contrib-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ccc;
+  margin-bottom: 4px;
+}
+.contrib-you .contrib-label {
+  color: #eab32d;
+}
+.contrib-bar-track {
+  height: 6px;
+  background: #1a0f22;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.contrib-you .contrib-bar-track {
+  background: #3d2a4d;
+}
+.contrib-bar-fill {
+  height: 100%;
+  background: #6b2e81;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+.contrib-you .contrib-bar-fill {
+  background: #eab32d;
+}
+.contrib-stats {
+  text-align: right;
+  flex-shrink: 0;
+}
+.contrib-votes {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ccc;
+}
+.contrib-you .contrib-votes {
+  color: #eab32d;
+}
+.contrib-detail {
+  font-size: 11px;
+  color: #8a7a96;
+}
+
 /* MATRIX */
 .matrix-section {
   padding: 16px;
