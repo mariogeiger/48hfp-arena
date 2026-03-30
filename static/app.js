@@ -31,7 +31,7 @@ const brokenPosters = new Set();
 
 function posterHtml(url) {
   if (!url || brokenPosters.has(url))
-    return `<div class="poster-ph">&#127902;</div>`;
+    return `<div class="poster-ph">&#127916;</div>`;
   return `<img class="poster" src="${esc(url)}">`;
 }
 
@@ -965,7 +965,7 @@ function setupEvents() {
         brokenPosters.add(e.target.src);
         const ph = document.createElement("div");
         ph.className = "poster-ph";
-        ph.innerHTML = "&#127902;";
+        ph.innerHTML = "&#127916;";
         e.target.replaceWith(ph);
       }
     },
