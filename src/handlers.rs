@@ -400,8 +400,34 @@ pub async fn global_matrix(data: web::Data<AppState>) -> HttpResponse {
 }
 
 pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
+    const MIN_VOTES: u32 = 3;
+    const MIN_VOTERS: usize = 2;
+
     let ratings = data.bt_ratings.lock().unwrap();
-    let mut ranked: Vec<&BtRating> = ratings.values().filter(|r| r.comparisons > 0).collect();
+    let users = data.users.lock().unwrap();
+
+    // Count unique voters per film
+    let mut voters_per_film: HashMap<usize, HashSet<&String>> = HashMap::new();
+    for (user_id, state) in users.iter() {
+        for pair_key in state.vote_outcomes.keys() {
+            let parts: Vec<&str> = pair_key.split(',').collect();
+            if let (Some(Ok(a)), Some(Ok(b))) = (
+                parts.first().map(|s| s.parse::<usize>()),
+                parts.get(1).map(|s| s.parse::<usize>()),
+            ) {
+                voters_per_film.entry(a).or_default().insert(user_id);
+                voters_per_film.entry(b).or_default().insert(user_id);
+            }
+        }
+    }
+
+    let mut ranked: Vec<&BtRating> = ratings
+        .values()
+        .filter(|r| {
+            r.comparisons >= MIN_VOTES
+                && voters_per_film.get(&r.film_id).map_or(0, |s| s.len()) >= MIN_VOTERS
+        })
+        .collect();
     ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
 
     let board: Vec<serde_json::Value> = ranked
