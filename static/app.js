@@ -243,6 +243,36 @@ async function matrixAction(endpoint, w, l) {
   store.set((s) => ({ ...s, userMatrix, globalMatrix }));
 }
 
+function submitSuggestion() {
+  const filmSelect = document.getElementById("suggest-film");
+  const title = document.getElementById("suggest-title").value.trim();
+  const team = document.getElementById("suggest-team").value.trim();
+  const city = document.getElementById("suggest-city").value.trim();
+  const poster = document.getElementById("suggest-poster").value.trim();
+  const video = document.getElementById("suggest-video").value.trim();
+
+  if (!title && !team && !video) return;
+
+  const isNew = !filmSelect.value;
+  const filmName = isNew
+    ? title || team
+    : filmSelect.options[filmSelect.selectedIndex]?.text;
+  const issueTitle = isNew
+    ? `New film: ${filmName}`
+    : `Correction: ${filmName}`;
+  const lines = [];
+  if (title) lines.push(`- **Title:** ${title}`);
+  if (team) lines.push(`- **Team:** ${team}`);
+  if (city) lines.push(`- **City:** ${city}`);
+  if (poster) lines.push(`- **Poster URL:** ${poster}`);
+  if (video) lines.push(`- **Video URL:** ${video}`);
+  const heading = isNew ? "## New film suggestion" : "## Suggested correction";
+  const body = `${heading}\n\n${lines.join("\n")}\n`;
+
+  const url = `https://github.com/mariogeiger/48hfp-arena/issues/new?title=${encodeURIComponent(issueTitle)}&body=${encodeURIComponent(body)}`;
+  window.open(url, "_blank");
+}
+
 function addToast(html) {
   const id = Date.now() + Math.random();
   store.set((s) => ({ ...s, toasts: [...s.toasts, { id, html }] }));
@@ -499,6 +529,21 @@ function renderMore(state, prev) {
         <h3>User Contributions</h3>
         <div id="contributions-content"></div>
       </div>
+      <div class="suggest-section">
+        <h3>Suggest a Correction</h3>
+        <p class="suggest-hint">Wrong title, missing video link, bad poster? Pick the film and fill in what needs changing. You can also suggest a new film.</p>
+        <div class="suggest-form">
+          <select id="suggest-film">
+            <option value="">Pick a film...</option>
+          </select>
+          <input type="text" id="suggest-title" placeholder="Title">
+          <input type="text" id="suggest-team" placeholder="Team">
+          <input type="text" id="suggest-city" placeholder="City">
+          <input type="url" id="suggest-poster" placeholder="Poster URL">
+          <input type="url" id="suggest-video" placeholder="Video URL (YouTube, Vimeo...)">
+          <button data-action="submit-suggestion">Open GitHub Issue</button>
+        </div>
+      </div>
       <div class="matrix-section">
         <h3>Your Vote Matrix</h3>
         <p class="matrix-hint">Tap empty cell to vote (row wins). Tap filled cell to remove vote.</p>
@@ -544,6 +589,24 @@ function renderMore(state, prev) {
         </div>
       </div>`;
     page.dataset.init = "1";
+  }
+
+  // Populate suggestion dropdown with films
+  if (
+    state.films !== prev.films ||
+    document.querySelectorAll("#suggest-film option").length <= 1
+  ) {
+    const select = document.getElementById("suggest-film");
+    if (select) {
+      select.innerHTML =
+        '<option value="">Pick a film...</option>' +
+        state.films
+          .map(
+            (f) =>
+              `<option value="${f.id}">${esc(f.title)} &mdash; ${esc(f.team)}</option>`,
+          )
+          .join("");
+    }
   }
 
   if (state.stats !== prev.stats && state.stats) {
@@ -861,6 +924,7 @@ function setupEvents() {
         parseInt(el.dataset.w),
         parseInt(el.dataset.l),
       ),
+    "submit-suggestion": () => submitSuggestion(),
   };
 
   document.body.addEventListener("click", (e) => {
@@ -877,6 +941,20 @@ function setupEvents() {
   document.body.addEventListener("change", (e) => {
     if (e.target.matches("#focus-film"))
       setFocusFilm(e.target.value ? parseInt(e.target.value) : null);
+    if (e.target.matches("#suggest-film")) {
+      const film = store
+        .get()
+        .films.find((f) => f.id === parseInt(e.target.value));
+      document.getElementById("suggest-title").value = film ? film.title : "";
+      document.getElementById("suggest-team").value = film ? film.team : "";
+      document.getElementById("suggest-city").value = film ? film.city : "";
+      document.getElementById("suggest-poster").value = film
+        ? film.poster_url
+        : "";
+      document.getElementById("suggest-video").value = film
+        ? film.video_url || ""
+        : "";
+    }
   });
 
   // Poster error handling (capture phase)

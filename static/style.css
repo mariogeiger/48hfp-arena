@@ -752,6 +752,56 @@ body.swipe-active {
   font-size: 12px;
 }
 
+/* SUGGEST CORRECTION */
+.suggest-section {
+  padding: 16px;
+}
+.suggest-section h3 {
+  font-size: 15px;
+  color: var(--text);
+  margin-bottom: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--card-alt);
+}
+.suggest-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.suggest-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.suggest-form select,
+.suggest-form input {
+  padding: 8px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.suggest-form select:focus,
+.suggest-form input:focus {
+  border-color: var(--accent);
+}
+.suggest-form button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--purple);
+  color: var(--text-on-accent);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.suggest-form button:hover {
+  opacity: 0.9;
+}
+
 /* MATRIX */
 .matrix-section {
   padding: 16px;
