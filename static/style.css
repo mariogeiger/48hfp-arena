@@ -252,6 +252,10 @@ body {
   justify-content: center;
   padding: 10px;
 }
+body.swipe-active {
+  height: 100dvh;
+  overflow: hidden;
+}
 .swipe-container {
   position: relative;
   width: 100%;

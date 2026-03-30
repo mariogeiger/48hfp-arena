@@ -74,6 +74,7 @@ function showPage(page) {
     .forEach((b) => b.classList.remove("active"));
   document.getElementById(`page-${page}`).classList.add("active");
   document.getElementById(`nav-${page}`).classList.add("active");
+  document.body.classList.toggle("swipe-active", page === "swipe");
   location.hash = page;
 
   const loaders = { swipe: loadPair, board: loadLeaderboard, more: loadMore };
