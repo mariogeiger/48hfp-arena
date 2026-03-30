@@ -11,12 +11,12 @@
   </head>
   <body>
     <nav class="nav">
-      <button id="nav-select" onclick="showPage('select')">Select Films</button>
-      <button id="nav-swipe" class="active" onclick="showPage('swipe')">
+      <button data-action="navigate" data-page="select">Select Films</button>
+      <button data-action="navigate" data-page="swipe" class="active">
         Compare
       </button>
-      <button id="nav-board" onclick="showPage('board')">Leaderboard</button>
-      <button id="nav-more" onclick="showPage('more')">More</button>
+      <button data-action="navigate" data-page="board">Leaderboard</button>
+      <button data-action="navigate" data-page="more">More</button>
       <a
         href="https://github.com/mariogeiger/48hfp-arena"
         target="_blank"
@@ -28,100 +28,10 @@
       ></a>
     </nav>
 
-    <!-- PAGE 1: SELECT -->
-    <div id="page-select" class="page">
-      <div class="select-header">
-        <p>Select the films you remember, then compare them head-to-head.</p>
-        <input
-          class="search-box"
-          type="text"
-          placeholder="Search films, teams, cities..."
-          oninput="filterFilms(this.value)"
-        />
-        <div class="select-actions">
-          <button onclick="selectAll()">Select All</button>
-          <button onclick="deselectAll()">Deselect All</button>
-        </div>
-      </div>
-      <div class="film-list" id="film-list"></div>
-      <div class="selection-status" id="selection-status">
-        Select at least 2 films to compare
-      </div>
-    </div>
-
-    <!-- PAGE 2: SWIPE -->
-    <div id="page-swipe" class="page active">
-      <div id="focus-picker-container"></div>
-      <div class="swipe-container" id="swipe-container"></div>
-    </div>
-
-    <!-- PAGE 3: LEADERBOARD -->
-    <div id="page-board" class="page">
-      <div class="page-header">
-        <h1>Leaderboard</h1>
-        <p>Elo rankings based on all user votes</p>
-      </div>
-      <div class="board-list" id="board-list"></div>
-      <div class="board-export">
-        <a href="/api/leaderboard.csv" target="_blank">Export as CSV</a>
-      </div>
-    </div>
-
-    <!-- PAGE 4: MORE -->
-    <div id="page-more" class="page">
-      <div class="page-header">
-        <h1>More</h1>
-        <p>Voting stats, your votes matrix, and global results</p>
-      </div>
-      <div id="stats-content"></div>
-
-      <div class="stats-section">
-        <h3>User Contributions</h3>
-        <div id="contributions-content"></div>
-      </div>
-
-      <div class="matrix-section" id="user-matrix-section">
-        <h3>
-          Your Vote Matrix
-          <button
-            class="matrix-zoom-btn"
-            onclick="openMatrixModal('user-matrix')"
-          >
-            &#x26F6;
-          </button>
-        </h3>
-        <p class="matrix-hint">
-          Tap empty cell to vote (row wins). Tap filled cell to remove vote.
-        </p>
-        <div class="matrix-scroll-wrapper">
-          <div id="user-matrix"></div>
-        </div>
-      </div>
-
-      <div class="matrix-section" id="global-matrix-section">
-        <h3>
-          Global Win Matrix
-          <button
-            class="matrix-zoom-btn"
-            onclick="openMatrixModal('global-matrix')"
-          >
-            &#x26F6;
-          </button>
-        </h3>
-        <p class="matrix-hint">Aggregate wins across all voters. Read only.</p>
-        <div class="matrix-scroll-wrapper">
-          <div id="global-matrix"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Fullscreen zoom modal -->
-    <div class="matrix-modal" id="matrix-modal">
-      <button class="matrix-modal-close" onclick="closeMatrixModal()">
-        &times;
-      </button>
-      <div class="matrix-modal-content" id="matrix-modal-content"></div>
-    </div>
+    <div id="page-select" class="page"></div>
+    <div id="page-swipe" class="page active"></div>
+    <div id="page-board" class="page"></div>
+    <div id="page-more" class="page"></div>
 
     <div class="vote-toast-container" id="toast-container"></div>
 

@@ -1,3 +1,5 @@
+// ==================== CONSTANTS ====================
+
 const USER_ID =
   localStorage.getItem("filmrank_uid") ||
   (() => {
@@ -6,862 +8,872 @@ const USER_ID =
     return id;
   })();
 
-let allFilms = [];
-let selectedIds = new Set(
-  JSON.parse(localStorage.getItem("filmrank_selected") || "[]"),
-);
-let currentPair = null;
-let voteCount = 0;
-let voteHistory = []; // [{winnerId, loserId}, ...]
-let focusFilmId = null; // pinned film for compare mode
+// ==================== UTILITIES ====================
 
-// -- Helpers --
 function esc(s) {
   const d = document.createElement("div");
   d.textContent = s;
   return d.innerHTML;
 }
 
-const brokenPosters = new Set();
-function posterImg(url) {
-  if (!url || brokenPosters.has(url))
-    return `<div class="poster-ph">&#127902;</div>`;
-  return `<img class="poster" src="${esc(url)}" onerror="brokenPosters.add(this.src);this.outerHTML='<div class=\\'poster-ph\\'>&#127902;</div>'">`;
+function api(path, body) {
+  const opts = body
+    ? {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    : {};
+  return fetch(path, opts).then((r) => r.json());
 }
 
-function filmMeta(f) {
+const brokenPosters = new Set();
+
+function posterHtml(url) {
+  if (!url || brokenPosters.has(url))
+    return `<div class="poster-ph">&#127902;</div>`;
+  return `<img class="poster" src="${esc(url)}">`;
+}
+
+function metaHtml(f) {
   return `${esc(f.team)}${f.city ? " &middot; " + esc(f.city) : ""}`;
 }
 
-// -- Init --
-async function init() {
-  const [filmsRes, boardRes] = await Promise.all([
-    fetch("/api/films"),
-    fetch("/api/leaderboard"),
-  ]);
-  allFilms = await filmsRes.json();
-  // Preload poster URLs so broken ones are detected before cards render
-  allFilms.forEach((f) => {
-    if (!f.poster_url) return;
-    const img = new Image();
-    img.onerror = () => brokenPosters.add(f.poster_url);
-    img.src = f.poster_url;
-  });
-  const board = await boardRes.json();
-  const rankById = new Map(board.map((item, i) => [item.film_id, i]));
-  allFilms.sort(
-    (a, b) =>
-      (rankById.get(a.id) ?? Infinity) - (rankById.get(b.id) ?? Infinity),
-  );
-  renderFilmList(allFilms);
-  if (selectedIds.size === 0) {
-    allFilms.forEach((f) => selectedIds.add(f.id));
-    document
-      .querySelectorAll(".film-item")
-      .forEach((el) => el.classList.add("selected"));
-  }
-  updateSelectionStatus();
-  if (selectedIds.size >= 2) await saveSelection();
+function shortTitle(t) {
+  return t.length > 12 ? t.slice(0, 11) + "\u2026" : t;
 }
 
-// -- Page Navigation --
-function showPage(page) {
-  document
-    .querySelectorAll(".page")
-    .forEach((p) => p.classList.remove("active"));
-  document
-    .querySelectorAll(".nav button")
-    .forEach((b) => b.classList.remove("active"));
-  document.getElementById(`page-${page}`).classList.add("active");
-  document.getElementById(`nav-${page}`).classList.add("active");
-  document.body.classList.toggle("swipe-active", page === "swipe");
-  location.hash = page;
+// ==================== STORE ====================
 
-  const loaders = { swipe: loadPair, board: loadLeaderboard, more: loadMore };
-  if (loaders[page]) loaders[page]();
+function createStore(initial) {
+  let state = initial;
+  let listener = null;
+  return {
+    get: () => state,
+    set(fn) {
+      const prev = state;
+      state = fn(state);
+      if (state !== prev && listener) listener(state, prev);
+    },
+    subscribe(fn) {
+      listener = fn;
+    },
+  };
 }
 
-// -- PAGE 1: Film Selection --
-function renderFilmList(films) {
-  document.getElementById("film-list").innerHTML = films
-    .map(
-      (f) => `
-    <div class="film-item ${selectedIds.has(f.id) ? "selected" : ""}"
-         data-id="${f.id}" onclick="toggleFilm(${f.id}, this)">
-      <div class="film-check"></div>
-      ${posterImg(f.poster_url)}
-      <div class="film-info">
-        <div class="film-title">${esc(f.title)}</div>
-        <div class="film-meta">${filmMeta(f)}</div>
-      </div>
-    </div>
-  `,
-    )
-    .join("");
-}
+const store = createStore({
+  page: "swipe",
+  films: [],
+  selectedIds: new Set(
+    JSON.parse(localStorage.getItem("filmrank_selected") || "[]"),
+  ),
+  searchQuery: "",
+
+  pair: null,
+  pairDone: false,
+  pairDoneReason: "",
+  voteCount: 0,
+  voteHistory: [],
+  focusFilmId: null,
+
+  board: [],
+  stats: null,
+  contributions: [],
+  userMatrix: null,
+  globalMatrix: null,
+
+  toasts: [],
+});
+
+// ==================== ACTIONS ====================
 
 let saveTimeout = null;
 
-function toggleFilm(id, el) {
-  if (selectedIds.has(id)) {
-    selectedIds.delete(id);
-    el.classList.remove("selected");
-  } else {
-    selectedIds.add(id);
-    el.classList.add("selected");
-  }
-  updateSelectionStatus();
-  debounceSaveSelection();
+function navigate(page) {
+  store.set((s) => ({ ...s, page }));
+  document.body.classList.toggle("swipe-active", page === "swipe");
+  location.hash = page;
+  const loaders = { swipe: loadPair, board: loadBoard, more: loadMore };
+  if (loaders[page]) loaders[page]();
 }
 
-function filterFilms(q) {
-  q = q.toLowerCase();
-  renderFilmList(
-    allFilms.filter(
-      (f) =>
-        f.title.toLowerCase().includes(q) ||
-        f.team.toLowerCase().includes(q) ||
-        f.city.toLowerCase().includes(q),
-    ),
-  );
+function toggleFilm(id) {
+  store.set((s) => {
+    const next = new Set(s.selectedIds);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return { ...s, selectedIds: next };
+  });
+  debounceSave();
 }
 
 function selectAll() {
-  document.querySelectorAll(".film-item").forEach((el) => {
-    selectedIds.add(parseInt(el.dataset.id));
-    el.classList.add("selected");
+  store.set((s) => {
+    const next = new Set(s.selectedIds);
+    const q = s.searchQuery.toLowerCase();
+    const visible = q
+      ? s.films.filter((f) =>
+          [f.title, f.team, f.city].some((t) => t.toLowerCase().includes(q)),
+        )
+      : s.films;
+    visible.forEach((f) => next.add(f.id));
+    return { ...s, selectedIds: next };
   });
-  updateSelectionStatus();
-  debounceSaveSelection();
+  debounceSave();
 }
 
 function deselectAll() {
-  selectedIds.clear();
-  document
-    .querySelectorAll(".film-item")
-    .forEach((el) => el.classList.remove("selected"));
-  updateSelectionStatus();
-  debounceSaveSelection();
+  store.set((s) => ({ ...s, selectedIds: new Set() }));
+  debounceSave();
 }
 
-function updateSelectionStatus() {
-  const el = document.getElementById("selection-status");
-  const n = selectedIds.size;
-  el.textContent =
-    n < 2 ? "Select at least 2 films to compare" : `${n} films selected`;
-  el.classList.toggle("has-enough", n >= 2);
+function setSearch(query) {
+  store.set((s) => ({ ...s, searchQuery: query }));
 }
 
-function debounceSaveSelection() {
+function debounceSave() {
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(saveSelection, 500);
 }
 
 async function saveSelection() {
-  localStorage.setItem("filmrank_selected", JSON.stringify([...selectedIds]));
-  await fetch("/api/selection", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: USER_ID, film_ids: [...selectedIds] }),
-  });
+  const ids = [...store.get().selectedIds];
+  localStorage.setItem("filmrank_selected", JSON.stringify(ids));
+  await api("/api/selection", { user_id: USER_ID, film_ids: ids });
 }
 
-// -- PAGE 2: Swipe Comparison --
-function renderFocusDropdown() {
-  const container = document.getElementById("focus-picker-container");
-  if (!container) return;
-  const selected = allFilms.filter((f) => selectedIds.has(f.id));
-  const options = selected
-    .map(
-      (f) =>
-        `<option value="${f.id}" ${f.id === focusFilmId ? "selected" : ""}>${esc(f.title)}</option>`,
-    )
-    .join("");
-  container.innerHTML = `<div class="focus-picker">
-    <label for="focus-film">Compare against:</label>
-    <select id="focus-film" onchange="setFocusFilm(this.value)">
-      <option value="">Random pairs</option>
-      ${options}
-    </select>
-  </div>`;
-}
-
-function setFocusFilm(val) {
-  focusFilmId = val ? parseInt(val) : null;
+function setFocusFilm(id) {
+  store.set((s) => ({ ...s, focusFilmId: id }));
   loadPair();
 }
 
 async function loadPair() {
-  const container = document.getElementById("swipe-container");
-  renderFocusDropdown();
+  const { focusFilmId } = store.get();
   let url = `/api/pair?user_id=${USER_ID}`;
   if (focusFilmId) url += `&focus_film=${focusFilmId}`;
-  const res = await fetch(url);
-  const data = await res.json();
-
-  voteCount = data.votes || 0;
+  const data = await api(url);
 
   if (data.done) {
-    const notEnough = selectedIds.size < 2;
-    const focusDone = focusFilmId && !notEnough;
-    container.innerHTML = `
-      <div class="swipe-done">
-        <h2>${notEnough ? "Select films first" : "All done!"}</h2>
-        <p>${
-          notEnough
-            ? "Go back and pick at least 2 films you've watched."
-            : focusDone
-              ? "You've compared this film against all others."
-              : `You've compared all possible pairs. (${voteCount} votes cast)`
-        }</p>
-        <button onclick="${focusDone ? "setFocusFilm('')" : `showPage('${notEnough ? "select" : "board"}')`}">${notEnough ? "Select Films" : focusDone ? "Compare All" : "View Leaderboard"}</button>
+    const { selectedIds, focusFilmId: fid } = store.get();
+    const reason =
+      selectedIds.size < 2 ? "not_enough" : fid ? "focus_done" : "all_done";
+    store.set((s) => ({
+      ...s,
+      pair: null,
+      pairDone: true,
+      pairDoneReason: reason,
+      voteCount: data.votes || 0,
+    }));
+  } else {
+    store.set((s) => ({
+      ...s,
+      pair: { a: data.a, b: data.b },
+      pairDone: false,
+      voteCount: data.votes || 0,
+    }));
+  }
+}
+
+async function castVote(winnerId, loserId) {
+  await api("/api/vote", {
+    user_id: USER_ID,
+    winner_id: winnerId,
+    loser_id: loserId,
+  });
+  store.set((s) => ({
+    ...s,
+    voteHistory: [...s.voteHistory, { winnerId, loserId }],
+  }));
+  loadPair();
+}
+
+async function undoVote() {
+  const { voteHistory, films } = store.get();
+  if (!voteHistory.length) return;
+  const last = voteHistory[voteHistory.length - 1];
+  await api("/api/unvote", {
+    user_id: USER_ID,
+    winner_id: last.winnerId,
+    loser_id: last.loserId,
+  });
+  const a = films.find((f) => f.id === last.winnerId);
+  const b = films.find((f) => f.id === last.loserId);
+  store.set((s) => ({
+    ...s,
+    voteHistory: s.voteHistory.slice(0, -1),
+    voteCount: Math.max(0, s.voteCount - 1),
+    pair: a && b ? { a, b } : s.pair,
+    pairDone: false,
+  }));
+}
+
+async function deselectAndSkip(filmId) {
+  store.set((s) => {
+    const next = new Set(s.selectedIds);
+    next.delete(filmId);
+    return { ...s, selectedIds: next };
+  });
+  await saveSelection();
+  loadPair();
+}
+
+async function loadBoard() {
+  const data = await api("/api/leaderboard");
+  store.set((s) => ({ ...s, board: data }));
+}
+
+async function loadMore() {
+  const [stats, contributions] = await Promise.all([
+    api("/api/stats"),
+    api(`/api/user-contributions?user_id=${USER_ID}`),
+  ]);
+  store.set((s) => ({ ...s, stats, contributions }));
+  const [userMatrix, globalMatrix] = await Promise.all([
+    api(`/api/user-matrix?user_id=${USER_ID}&_=${Date.now()}`),
+    api(`/api/global-matrix?_=${Date.now()}`),
+  ]);
+  store.set((s) => ({ ...s, userMatrix, globalMatrix }));
+}
+
+async function matrixAction(endpoint, w, l) {
+  await api(endpoint, { user_id: USER_ID, winner_id: w, loser_id: l });
+  const [userMatrix, globalMatrix] = await Promise.all([
+    api(`/api/user-matrix?user_id=${USER_ID}&_=${Date.now()}`),
+    api(`/api/global-matrix?_=${Date.now()}`),
+  ]);
+  store.set((s) => ({ ...s, userMatrix, globalMatrix }));
+}
+
+function addToast(html) {
+  const id = Date.now() + Math.random();
+  store.set((s) => ({ ...s, toasts: [...s.toasts, { id, html }] }));
+  setTimeout(
+    () =>
+      store.set((s) => ({
+        ...s,
+        toasts: s.toasts.filter((t) => t.id !== id),
+      })),
+    4000,
+  );
+}
+
+// ==================== RENDERING ====================
+
+function render(state, prev) {
+  // Nav
+  if (state.page !== prev.page) {
+    document
+      .querySelectorAll(".page")
+      .forEach((p) => p.classList.remove("active"));
+    document.getElementById(`page-${state.page}`).classList.add("active");
+    document.querySelectorAll(".nav button[data-action]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.page === state.page);
+    });
+  }
+
+  // Active page
+  const renderers = {
+    select: renderSelect,
+    swipe: renderSwipe,
+    board: renderBoard,
+    more: renderMore,
+  };
+  renderers[state.page](state, prev);
+
+  // Toasts
+  if (state.toasts !== prev.toasts) renderToasts(state);
+}
+
+// -- Select Page --
+
+function renderSelect(state, prev) {
+  const page = document.getElementById("page-select");
+  let needsList = false;
+  if (!page.dataset.init) {
+    page.innerHTML = `
+      <div class="select-header">
+        <p>Select the films you remember, then compare them head-to-head.</p>
+        <div class="search-wrapper">
+          <input class="search-box" type="text" placeholder="Search films, teams, cities...">
+          <button class="search-clear" data-action="clear-search">&times;</button>
+        </div>
+        <div class="select-actions">
+          <button data-action="select-all">Select All</button>
+          <button data-action="deselect-all">Deselect All</button>
+        </div>
+      </div>
+      <div class="film-list" id="film-list"></div>
+      <div class="selection-status" id="selection-status"></div>`;
+    page.dataset.init = "1";
+    needsList = true;
+  }
+
+  if (
+    needsList ||
+    state.films !== prev.films ||
+    state.searchQuery !== prev.searchQuery ||
+    state.selectedIds !== prev.selectedIds
+  ) {
+    const q = state.searchQuery.toLowerCase();
+    const visible = q
+      ? state.films.filter((f) =>
+          [f.title, f.team, f.city].some((s) => s.toLowerCase().includes(q)),
+        )
+      : state.films;
+    document.getElementById("film-list").innerHTML = visible
+      .map(
+        (f) => `
+      <div class="film-item ${state.selectedIds.has(f.id) ? "selected" : ""}"
+           data-action="toggle-film" data-id="${f.id}">
+        <div class="film-check"></div>
+        ${posterHtml(f.poster_url)}
+        <div class="film-info">
+          <div class="film-title">${esc(f.title)}</div>
+          <div class="film-meta">${metaHtml(f)}</div>
+        </div>
+      </div>`,
+      )
+      .join("");
+  }
+
+  const n = state.selectedIds.size;
+  const status = document.getElementById("selection-status");
+  if (status) {
+    status.textContent =
+      n < 2 ? "Select at least 2 films to compare" : `${n} films selected`;
+    status.classList.toggle("has-enough", n >= 2);
+  }
+}
+
+// -- Swipe Page --
+
+function renderSwipe(state, prev) {
+  const page = document.getElementById("page-swipe");
+  if (!page.dataset.init) {
+    page.innerHTML = `
+      <div id="focus-picker-container"></div>
+      <div class="swipe-container" id="swipe-container"></div>`;
+    page.dataset.init = "1";
+  }
+
+  // Focus picker
+  if (
+    state.films !== prev.films ||
+    state.selectedIds !== prev.selectedIds ||
+    state.focusFilmId !== prev.focusFilmId
+  ) {
+    const options = state.films
+      .filter((f) => state.selectedIds.has(f.id))
+      .map(
+        (f) =>
+          `<option value="${f.id}" ${f.id === state.focusFilmId ? "selected" : ""}>${esc(f.title)}</option>`,
+      )
+      .join("");
+    document.getElementById("focus-picker-container").innerHTML = `
+      <div class="focus-picker">
+        <label for="focus-film">Compare against:</label>
+        <select id="focus-film">
+          <option value="">Random pairs</option>
+          ${options}
+        </select>
       </div>`;
-    return;
   }
 
-  currentPair = data;
-  renderPair(data.a, data.b);
-}
-
-function renderPair(a, b) {
-  currentPair = { a, b };
-  document.getElementById("swipe-container").innerHTML = `
-    <div>
-      <div class="vs-badge">VS</div>
-      <div class="swipe-arena" id="swipe-arena">
-        <div class="film-card" id="film-a">
-          ${posterImg(a.poster_url)}
-          <div class="title">${esc(a.title)}</div>
-          <div class="meta">${filmMeta(a)}</div>
-          <button class="deselect-btn" onclick="deselectAndSkip(${a.id}, event)">Haven't seen it</button>
-        </div>
-        <div class="film-card" id="film-b">
-          ${posterImg(b.poster_url)}
-          <div class="title">${esc(b.title)}</div>
-          <div class="meta">${filmMeta(b)}</div>
-          <button class="deselect-btn" onclick="deselectAndSkip(${b.id}, event)">Haven't seen it</button>
-        </div>
-      </div>
-      <div class="swipe-buttons">
-        <button class="swipe-arrow-btn pick-a" id="btn-a" title="Pick left">&larr;</button>
-        <button class="swipe-arrow-btn pick-b" id="btn-b" title="Pick right">&rarr;</button>
-      </div>
-      <div class="swipe-progress">${voteCount} comparisons made</div>
-      <div class="swipe-bottom-actions">
-        <button class="undo-btn" onclick="undoVote()" ${voteHistory.length > 0 ? "" : "disabled"}>Undo</button>
-        <button class="skip-btn" onclick="loadPair()">Skip</button>
-      </div>
-    </div>`;
-  setupSwipe();
-}
-
-let swipeCleanup = null;
-
-function setupSwipe() {
-  if (swipeCleanup) {
-    swipeCleanup();
-    swipeCleanup = null;
+  // Pair or done state — full re-render only when pair changes
+  if (state.pair !== prev.pair || state.pairDone !== prev.pairDone) {
+    const container = document.getElementById("swipe-container");
+    if (state.pairDone) {
+      const r = state.pairDoneReason;
+      const actionMap = {
+        not_enough: ["show-select", "Select Films"],
+        focus_done: ["clear-focus", "Compare All"],
+        all_done: ["show-board", "View Leaderboard"],
+      };
+      const [action, label] = actionMap[r] || actionMap.all_done;
+      const msg =
+        r === "not_enough"
+          ? "Go back and pick at least 2 films you've watched."
+          : r === "focus_done"
+            ? "You've compared this film against all others."
+            : `You've compared all possible pairs. (${state.voteCount} votes cast)`;
+      container.innerHTML = `
+        <div class="swipe-done">
+          <h2>${r === "not_enough" ? "Select films first" : "All done!"}</h2>
+          <p>${msg}</p>
+          <button data-action="${action}">${label}</button>
+        </div>`;
+    } else if (state.pair) {
+      const { a, b } = state.pair;
+      container.innerHTML = `
+        <div>
+          <div class="vs-badge">VS</div>
+          <div class="swipe-arena" id="swipe-arena">
+            <div class="film-card" id="film-a" data-action="pick-a">
+              ${posterHtml(a.poster_url)}
+              <div class="title">${esc(a.title)}</div>
+              <div class="meta">${metaHtml(a)}</div>
+              <button class="deselect-btn" data-action="deselect-skip" data-id="${a.id}">Haven't seen it</button>
+            </div>
+            <div class="film-card" id="film-b" data-action="pick-b">
+              ${posterHtml(b.poster_url)}
+              <div class="title">${esc(b.title)}</div>
+              <div class="meta">${metaHtml(b)}</div>
+              <button class="deselect-btn" data-action="deselect-skip" data-id="${b.id}">Haven't seen it</button>
+            </div>
+          </div>
+          <div class="swipe-buttons">
+            <button class="swipe-arrow-btn" data-action="pick-a" title="Pick left">&larr;</button>
+            <button class="swipe-arrow-btn" data-action="pick-b" title="Pick right">&rarr;</button>
+          </div>
+          <div class="swipe-progress">${state.voteCount} comparisons made</div>
+          <div class="swipe-bottom-actions">
+            <button class="undo-btn" data-action="undo" ${state.voteHistory.length ? "" : "disabled"}>Undo</button>
+            <button class="skip-btn" data-action="skip">Skip</button>
+          </div>
+        </div>`;
+    }
   }
 
-  const arena = document.getElementById("swipe-arena");
-  const filmA = document.getElementById("film-a");
-  const filmB = document.getElementById("film-b");
-  const btnA = document.getElementById("btn-a");
-  const btnB = document.getElementById("btn-b");
-  if (!arena) return;
+  // Targeted updates (no full re-render)
+  if (state.voteCount !== prev.voteCount) {
+    const el = document.querySelector(".swipe-progress");
+    if (el) el.textContent = `${state.voteCount} comparisons made`;
+  }
+  if (state.voteHistory !== prev.voteHistory) {
+    const el = document.querySelector(".undo-btn");
+    if (el) el.disabled = !state.voteHistory.length;
+  }
+}
 
+// -- Board Page --
+
+function renderBoard(state, prev) {
+  const page = document.getElementById("page-board");
+  if (!page.dataset.init) {
+    page.innerHTML = `
+      <div class="page-header">
+        <h1>Leaderboard</h1>
+        <p>Bradley-Terry rankings based on all user votes</p>
+      </div>
+      <div class="board-list" id="board-list"></div>
+      <div class="board-export">
+        <a href="/api/leaderboard.csv" target="_blank">Export as CSV</a>
+      </div>`;
+    page.dataset.init = "1";
+  }
+  if (state.board !== prev.board) {
+    document.getElementById("board-list").innerHTML =
+      state.board.length === 0
+        ? `<div class="board-empty"><h3>No votes yet</h3><p>Start comparing films to build the leaderboard!</p></div>`
+        : state.board
+            .map(
+              (item, i) => `
+        <div class="board-item">
+          <div class="board-rank">${i + 1}</div>
+          ${posterHtml(item.poster_url)}
+          <div class="board-info">
+            <div class="board-title">${esc(item.title)}</div>
+            <div class="board-meta">${metaHtml(item)}</div>
+          </div>
+          <div class="board-stats">
+            <div class="board-score">${Math.round(item.rating)}</div>
+            <div class="board-record">${item.wins}W - ${item.losses}L</div>
+          </div>
+        </div>`,
+            )
+            .join("");
+  }
+}
+
+// -- More Page --
+
+function renderMore(state, prev) {
+  const page = document.getElementById("page-more");
+  if (!page.dataset.init) {
+    page.innerHTML = `
+      <div class="page-header">
+        <h1>More</h1>
+        <p>Voting stats, your votes matrix, and global results</p>
+      </div>
+      <div id="stats-content"></div>
+      <div class="stats-section">
+        <h3>User Contributions</h3>
+        <div id="contributions-content"></div>
+      </div>
+      <div class="matrix-section">
+        <h3>Your Vote Matrix</h3>
+        <p class="matrix-hint">Tap empty cell to vote (row wins). Tap filled cell to remove vote.</p>
+        <div class="matrix-scroll-wrapper"><div id="user-matrix"></div></div>
+      </div>
+      <div class="matrix-section">
+        <h3>Global Win Matrix</h3>
+        <p class="matrix-hint">Aggregate wins across all voters. Read only.</p>
+        <div class="matrix-scroll-wrapper"><div id="global-matrix"></div></div>
+      </div>`;
+    page.dataset.init = "1";
+  }
+
+  if (state.stats !== prev.stats && state.stats) {
+    const s = state.stats;
+    document.getElementById("stats-content").innerHTML = `
+      <div class="stats-grid">
+        ${[
+          [s.total_votes, "Total Votes"],
+          [s.active_users, "Active Voters"],
+          [s.total_users, "Total Visitors"],
+          [s.films_with_votes, "Films Voted On"],
+          [s.total_films, "Total Films"],
+        ]
+          .map(
+            ([v, l]) =>
+              `<div class="stat-card"><div class="stat-value">${v}</div><div class="stat-label">${l}</div></div>`,
+          )
+          .join("")}
+      </div>`;
+  }
+
+  if (state.contributions !== prev.contributions) {
+    const data = state.contributions;
+    const container = document.getElementById("contributions-content");
+    if (data.length === 0) {
+      container.innerHTML = '<p class="matrix-empty">No contributions yet.</p>';
+    } else {
+      const max = Math.max(...data.map((u) => u.votes), 1);
+      container.innerHTML = data
+        .map(
+          (u, i) => `
+        <div class="contrib-item${u.is_you ? " contrib-you" : ""}">
+          <div class="contrib-rank">${i + 1}</div>
+          <div class="contrib-info">
+            <div class="contrib-label">${esc(u.label)}</div>
+            <div class="contrib-bar-track">
+              <div class="contrib-bar-fill" style="width: ${((u.votes / max) * 100).toFixed(1)}%"></div>
+            </div>
+          </div>
+          <div class="contrib-stats">
+            <div class="contrib-votes">${u.votes}</div>
+            <div class="contrib-detail">${u.films_selected} films</div>
+          </div>
+        </div>`,
+        )
+        .join("");
+    }
+  }
+
+  if (state.userMatrix !== prev.userMatrix || state.board !== prev.board) {
+    const container = document.getElementById("user-matrix");
+    const data = state.userMatrix;
+    if (!data || data.films.length === 0) {
+      container.innerHTML =
+        '<p class="matrix-empty">No votes yet. Start comparing!</p>';
+    } else {
+      const films = sortFilmsByBoard(data.films, state.board);
+      const voteMap = new Map();
+      for (const v of data.votes) {
+        const [a, b] = [
+          Math.min(v.film_a, v.film_b),
+          Math.max(v.film_a, v.film_b),
+        ];
+        voteMap.set(`${a},${b}`, v.winner);
+      }
+      const legacySet = new Set();
+      for (const v of data.legacy_votes || []) {
+        const [a, b] = [
+          Math.min(v.film_a, v.film_b),
+          Math.max(v.film_a, v.film_b),
+        ];
+        legacySet.add(`${a},${b}`);
+      }
+      container.innerHTML = renderMatrixTable(films, (row, col) => {
+        const key = `${Math.min(row.id, col.id)},${Math.max(row.id, col.id)}`;
+        const winner = voteMap.get(key);
+        const title = `${esc(row.title)} vs ${esc(col.title)}`;
+        if (winner !== undefined) {
+          const won = winner === row.id;
+          const [w, l] = won ? [row.id, col.id] : [col.id, row.id];
+          return `<td class="matrix-cell ${won ? "matrix-win" : "matrix-loss"}" data-action="matrix-unvote" data-w="${w}" data-l="${l}" title="${title}">${won ? "W" : "L"}</td>`;
+        }
+        if (legacySet.has(key))
+          return `<td class="matrix-cell matrix-legacy" data-action="matrix-vote" data-w="${row.id}" data-l="${col.id}" title="${title}">?</td>`;
+        return `<td class="matrix-cell matrix-empty-cell" data-action="matrix-vote" data-w="${row.id}" data-l="${col.id}" title="${title}"></td>`;
+      });
+    }
+  }
+
+  if (state.globalMatrix !== prev.globalMatrix || state.board !== prev.board) {
+    const container = document.getElementById("global-matrix");
+    const data = state.globalMatrix;
+    if (!data || data.films.length === 0) {
+      container.innerHTML = '<p class="matrix-empty">No data yet.</p>';
+    } else {
+      const films = sortFilmsByBoard(data.films, state.board);
+      const winMap = new Map();
+      for (const w of data.wins) winMap.set(`${w.winner},${w.loser}`, w.count);
+      container.innerHTML = renderMatrixTable(films, (row, col) => {
+        const wRC = winMap.get(`${row.id},${col.id}`) || 0;
+        const wCR = winMap.get(`${col.id},${row.id}`) || 0;
+        const total = wRC + wCR;
+        let cls = "matrix-cell";
+        if (total > 0) {
+          const rate = wRC / total;
+          cls +=
+            rate > 0.5
+              ? " matrix-favors-row"
+              : rate < 0.5
+                ? " matrix-favors-col"
+                : " matrix-neutral";
+        }
+        return `<td class="${cls}" title="${esc(row.title)}: ${wRC}W / ${esc(col.title)}: ${wCR}W">${total > 0 ? wRC : ""}</td>`;
+      });
+    }
+  }
+}
+
+function sortFilmsByBoard(films, board) {
+  const rank = new Map(board.map((b, i) => [b.film_id, i]));
+  return [...films].sort(
+    (a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity),
+  );
+}
+
+function renderMatrixTable(films, cellFn) {
+  const headers = films
+    .map(
+      (f) =>
+        `<th class="matrix-col-header" title="${esc(f.title)}">${esc(shortTitle(f.title))}</th>`,
+    )
+    .join("");
+  const rows = films
+    .map((row) => {
+      const cells = films
+        .map((col) =>
+          row.id === col.id
+            ? '<td class="matrix-cell matrix-diag"></td>'
+            : cellFn(row, col),
+        )
+        .join("");
+      return `<tr><td class="matrix-row-header" title="${esc(row.title)}">${esc(shortTitle(row.title))}</td>${cells}</tr>`;
+    })
+    .join("");
+  return `<table class="matrix-table"><thead><tr><th class="matrix-corner">\u2193 beat \u2192</th>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// -- Toasts --
+
+function renderToasts(state) {
+  const container = document.getElementById("toast-container");
+  // Remove toasts not in state
+  container.querySelectorAll("[data-toast-id]").forEach((el) => {
+    if (!state.toasts.find((t) => String(t.id) === el.dataset.toastId))
+      el.remove();
+  });
+  // Add new toasts
+  for (const t of state.toasts) {
+    if (!container.querySelector(`[data-toast-id="${t.id}"]`)) {
+      const el = document.createElement("div");
+      el.className = "vote-toast";
+      el.dataset.toastId = t.id;
+      el.innerHTML = t.html;
+      container.appendChild(el);
+    }
+  }
+}
+
+// ==================== SWIPE CONTROLLER ====================
+
+function createSwipeController() {
   let startX = 0,
-    currentX = 0,
+    dx = 0,
     dragging = false,
     didDrag = false,
     animating = false;
 
-  function onStart(x) {
-    if (animating) return;
-    startX = x;
-    currentX = 0;
+  function getCards() {
+    return [
+      document.getElementById("film-a"),
+      document.getElementById("film-b"),
+    ];
+  }
+
+  function onDown(e) {
+    if (animating || store.get().page !== "swipe") return;
+    if (!e.target.closest("#swipe-arena")) return;
+    if (e.target.closest(".deselect-btn")) return;
+    startX = e.clientX;
+    dx = 0;
     dragging = true;
     didDrag = false;
-    filmA.style.transition = "none";
-    filmB.style.transition = "none";
+    const [a, b] = getCards();
+    if (a) a.style.transition = "none";
+    if (b) b.style.transition = "none";
   }
-  function onMove(x) {
+
+  function onMove(e) {
     if (!dragging) return;
-    currentX = x - startX;
-    if (Math.abs(currentX) > 5) didDrag = true;
-    // Mirror the vote animation during drag
-    const t = Math.min(1, Math.abs(currentX) / 150);
-    const pickedLeft = currentX < 0;
-    const winner = pickedLeft ? filmA : filmB;
-    const loser = pickedLeft ? filmB : filmA;
-    const dir = pickedLeft ? -1 : 1;
+    dx = e.clientX - startX;
+    if (Math.abs(dx) > 5) didDrag = true;
+    const [filmA, filmB] = getCards();
+    if (!filmA || !filmB) return;
+    const t = Math.min(1, Math.abs(dx) / 150);
+    const left = dx < 0;
+    const [winner, loser] = left ? [filmA, filmB] : [filmB, filmA];
+    const dir = left ? -1 : 1;
     winner.style.transform = `translateX(${dir * t * 100}px) rotate(${dir * t * 5}deg)`;
     winner.style.opacity = `${1 - t * 0.3}`;
     loser.style.transform = `translateY(${t * 80}px) scale(${1 - t * 0.15})`;
     loser.style.opacity = `${1 - t * 0.4}`;
   }
-  function onEnd() {
+
+  function onUp() {
     if (!dragging) return;
     dragging = false;
-    if (Math.abs(currentX) > 80) {
-      if (currentX > 0) animateVote(true, currentPair.b.id, currentPair.a.id);
-      else animateVote(false, currentPair.a.id, currentPair.b.id);
+    if (Math.abs(dx) > 80) {
+      pickSide(dx > 0);
     } else {
-      filmA.style.transition = "transform 0.3s ease, opacity 0.3s ease";
-      filmB.style.transition = "transform 0.3s ease, opacity 0.3s ease";
-      filmA.style.transform = "";
-      filmA.style.opacity = "";
-      filmB.style.transform = "";
-      filmB.style.opacity = "";
+      const [filmA, filmB] = getCards();
+      const ease = "transform 0.3s ease, opacity 0.3s ease";
+      if (filmA) {
+        filmA.style.transition = ease;
+        filmA.style.transform = "";
+        filmA.style.opacity = "";
+      }
+      if (filmB) {
+        filmB.style.transition = ease;
+        filmB.style.transform = "";
+        filmB.style.opacity = "";
+      }
     }
   }
 
-  function animateVote(pickedRight, winnerId, loserId) {
-    if (animating) return;
+  function pickSide(right) {
+    const { pair } = store.get();
+    if (!pair || animating) return;
     animating = true;
-    const winner = pickedRight ? filmB : filmA;
-    const loser = pickedRight ? filmA : filmB;
-    const dir = pickedRight ? 1 : -1;
-    winner.style.transition =
-      "transform 0.4s cubic-bezier(.4,0,.2,1), opacity 0.4s ease";
-    loser.style.transition =
-      "transform 0.4s cubic-bezier(.4,0,.2,1), opacity 0.4s ease";
+    const [filmA, filmB] = getCards();
+    if (!filmA || !filmB) {
+      animating = false;
+      return;
+    }
+    const [winner, loser] = right ? [filmB, filmA] : [filmA, filmB];
+    const dir = right ? 1 : -1;
+    const ease = "transform 0.4s cubic-bezier(.4,0,.2,1), opacity 0.4s ease";
+    winner.style.transition = loser.style.transition = ease;
     winner.style.transform = `translateX(${dir * 300}px) rotate(${dir * 12}deg)`;
     winner.style.opacity = "0";
     loser.style.transform = "translateY(200px) scale(0.7)";
     loser.style.opacity = "0";
-    setTimeout(() => castVote(winnerId, loserId), 350);
+    const [wId, lId] = right ? [pair.b.id, pair.a.id] : [pair.a.id, pair.b.id];
+    setTimeout(() => {
+      animating = false;
+      castVote(wId, lId);
+    }, 350);
   }
 
-  const handlers = [
-    [arena, "mousedown", (e) => onStart(e.clientX)],
-    [window, "mousemove", (e) => onMove(e.clientX)],
-    [window, "mouseup", onEnd],
-    [
-      arena,
-      "touchstart",
-      (e) => onStart(e.touches[0].clientX),
-      { passive: true },
-    ],
-    [
-      window,
-      "touchmove",
-      (e) => onMove(e.touches[0].clientX),
-      { passive: true },
-    ],
-    [window, "touchend", onEnd],
-    ...[
-      filmA.querySelector(".poster") || filmA.querySelector(".poster-ph"),
-      filmA.querySelector(".title"),
-    ]
-      .filter(Boolean)
-      .map((el) => [
-        el,
-        "click",
-        () => {
-          if (!didDrag) animateVote(false, currentPair.a.id, currentPair.b.id);
-        },
-      ]),
-    ...[
-      filmB.querySelector(".poster") || filmB.querySelector(".poster-ph"),
-      filmB.querySelector(".title"),
-    ]
-      .filter(Boolean)
-      .map((el) => [
-        el,
-        "click",
-        () => {
-          if (!didDrag) animateVote(true, currentPair.b.id, currentPair.a.id);
-        },
-      ]),
-    [
-      btnA,
-      "click",
-      (e) => {
-        e.stopPropagation();
-        animateVote(false, currentPair.a.id, currentPair.b.id);
-      },
-    ],
-    [
-      btnB,
-      "click",
-      (e) => {
-        e.stopPropagation();
-        animateVote(true, currentPair.b.id, currentPair.a.id);
-      },
-    ],
-    [
-      document,
-      "keydown",
-      (e) => {
-        if (e.key === "ArrowLeft")
-          animateVote(false, currentPair.a.id, currentPair.b.id);
-        else if (e.key === "ArrowRight")
-          animateVote(true, currentPair.b.id, currentPair.a.id);
-      },
-    ],
-  ];
+  // Pointer events (unified mouse + touch)
+  window.addEventListener("pointerdown", onDown);
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
 
-  handlers.forEach(([el, evt, fn, opts]) => el.addEventListener(evt, fn, opts));
-  swipeCleanup = () =>
-    handlers.forEach(([el, evt, fn]) => el.removeEventListener(evt, fn));
-}
-
-async function castVote(winnerId, loserId) {
-  await fetch("/api/vote", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      user_id: USER_ID,
-      winner_id: winnerId,
-      loser_id: loserId,
-    }),
+  // Keyboard
+  document.addEventListener("keydown", (e) => {
+    if (store.get().page !== "swipe") return;
+    if (e.key === "ArrowLeft") pickSide(false);
+    else if (e.key === "ArrowRight") pickSide(true);
   });
-  voteHistory.push({ winnerId, loserId });
-  loadPair();
+
+  return { pickSide, wasDrag: () => didDrag };
 }
 
-async function undoVote() {
-  const last = voteHistory.pop();
-  if (!last) return;
-  await fetch("/api/unvote", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      user_id: USER_ID,
-      winner_id: last.winnerId,
-      loser_id: last.loserId,
-    }),
-  });
-  voteCount = Math.max(0, voteCount - 1);
-  const filmA = allFilms.find((f) => f.id === last.winnerId);
-  const filmB = allFilms.find((f) => f.id === last.loserId);
-  renderPair(filmA, filmB);
-}
+// ==================== EVENT DELEGATION ====================
 
-async function deselectAndSkip(filmId, event) {
-  event.stopPropagation();
-  selectedIds.delete(filmId);
-  const el = document.querySelector(`.film-item[data-id="${filmId}"]`);
-  if (el) el.classList.remove("selected");
-  updateSelectionStatus();
-  await saveSelection();
-  loadPair();
-}
+let swipeCtrl;
 
-// -- PAGE 3: Leaderboard --
-async function loadLeaderboard() {
-  const res = await fetch("/api/leaderboard");
-  const data = await res.json();
-  const container = document.getElementById("board-list");
+function setupEvents() {
+  swipeCtrl = createSwipeController();
 
-  if (data.length === 0) {
-    container.innerHTML = `
-      <div class="board-empty">
-        <h3>No votes yet</h3>
-        <p>Start comparing films to build the leaderboard!</p>
-      </div>`;
-    return;
-  }
-
-  container.innerHTML = data
-    .map(
-      (item, i) => `
-    <div class="board-item">
-      <div class="board-rank">${i + 1}</div>
-      ${posterImg(item.poster_url)}
-      <div class="board-info">
-        <div class="board-title">${esc(item.title)}</div>
-        <div class="board-meta">${filmMeta(item)}</div>
-      </div>
-      <div class="board-stats">
-        <div class="board-score">${Math.round(item.rating)}</div>
-        <div class="board-record">${item.wins}W - ${item.losses}L</div>
-      </div>
-    </div>
-  `,
-    )
-    .join("");
-}
-
-// -- PAGE 4: More --
-async function loadMore() {
-  await Promise.all([loadStats(), loadUserContributions()]);
-  await Promise.all([loadUserMatrix(), loadGlobalMatrix()]);
-}
-
-async function loadStats() {
-  const res = await fetch("/api/stats");
-  const s = await res.json();
-  const container = document.getElementById("stats-content");
-
-  container.innerHTML = `
-    <div class="stats-grid">
-      ${[
-        [s.total_votes, "Total Votes"],
-        [s.active_users, "Active Voters"],
-        [s.total_users, "Total Visitors"],
-        [s.films_with_votes, "Films Voted On"],
-        [s.total_films, "Total Films"],
-      ]
-        .map(
-          ([v, l]) => `
-        <div class="stat-card">
-          <div class="stat-value">${v}</div>
-          <div class="stat-label">${l}</div>
-        </div>`,
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-async function loadUserContributions() {
-  const res = await fetch(`/api/user-contributions?user_id=${USER_ID}`);
-  const data = await res.json();
-  const container = document.getElementById("contributions-content");
-
-  if (data.length === 0) {
-    container.innerHTML = '<p class="matrix-empty">No contributions yet.</p>';
-    return;
-  }
-
-  const maxVotes = Math.max(...data.map((u) => u.votes), 1);
-
-  container.innerHTML = data
-    .map(
-      (u, i) => `
-    <div class="contrib-item${u.is_you ? " contrib-you" : ""}">
-      <div class="contrib-rank">${i + 1}</div>
-      <div class="contrib-info">
-        <div class="contrib-label">${esc(u.label)}</div>
-        <div class="contrib-bar-track">
-          <div class="contrib-bar-fill" style="width: ${((u.votes / maxVotes) * 100).toFixed(1)}%"></div>
-        </div>
-      </div>
-      <div class="contrib-stats">
-        <div class="contrib-votes">${u.votes}</div>
-        <div class="contrib-detail">${u.films_selected} films</div>
-      </div>
-    </div>`,
-    )
-    .join("");
-}
-
-// -- Matrix Rendering --
-function shortTitle(t) {
-  return t.length > 12 ? t.slice(0, 11) + "\u2026" : t;
-}
-
-async function loadUserMatrix() {
-  const res = await fetch(
-    `/api/user-matrix?user_id=${USER_ID}&_=${Date.now()}`,
-  );
-  const data = await res.json();
-  const container = document.getElementById("user-matrix");
-  if (data.films.length === 0) {
-    container.innerHTML =
-      '<p class="matrix-empty">No votes yet. Start comparing!</p>';
-    return;
-  }
-  container.innerHTML = renderUserMatrix(
-    data.films,
-    data.votes,
-    data.legacy_votes,
-  );
-}
-
-async function loadGlobalMatrix() {
-  const res = await fetch(`/api/global-matrix?_=${Date.now()}`);
-  const data = await res.json();
-  const container = document.getElementById("global-matrix");
-  if (data.films.length === 0) {
-    container.innerHTML = '<p class="matrix-empty">No data yet.</p>';
-    return;
-  }
-  container.innerHTML = renderGlobalMatrix(data.films, data.wins);
-}
-
-function renderUserMatrix(films, votes, legacyVotes) {
-  const voteMap = new Map();
-  for (const v of votes) {
-    const a = Math.min(v.film_a, v.film_b),
-      b = Math.max(v.film_a, v.film_b);
-    voteMap.set(`${a},${b}`, v.winner);
-  }
-  const legacySet = new Set();
-  for (const v of legacyVotes || []) {
-    const a = Math.min(v.film_a, v.film_b),
-      b = Math.max(v.film_a, v.film_b);
-    legacySet.add(`${a},${b}`);
-  }
-
-  let html =
-    '<table class="matrix-table"><thead><tr><th class="matrix-corner">\u2193 beat \u2192</th>';
-  for (const f of films) {
-    html += `<th class="matrix-col-header" title="${esc(f.title)}">${esc(shortTitle(f.title))}</th>`;
-  }
-  html += "</tr></thead><tbody>";
-
-  for (const row of films) {
-    html += `<tr><td class="matrix-row-header" title="${esc(row.title)}">${esc(shortTitle(row.title))}</td>`;
-    for (const col of films) {
-      if (row.id === col.id) {
-        html += '<td class="matrix-cell matrix-diag"></td>';
-        continue;
-      }
-      const a = Math.min(row.id, col.id),
-        b = Math.max(row.id, col.id);
-      const key = `${a},${b}`;
-      const winner = voteMap.get(key);
-      const isLegacy = legacySet.has(key);
-
-      let cls = "matrix-cell",
-        content = "",
-        click = "";
-
-      if (winner !== undefined) {
-        if (winner === row.id) {
-          cls += " matrix-win";
-          content = "W";
-        } else {
-          cls += " matrix-loss";
-          content = "L";
-        }
-        // Click to remove vote
-        const uw = winner === row.id ? row.id : col.id;
-        const ul = winner === row.id ? col.id : row.id;
-        click = ` onclick="matrixUnvote(${uw},${ul})"`;
-      } else if (isLegacy) {
-        cls += " matrix-legacy";
-        content = "?";
-        click = ` onclick="matrixVote(${row.id},${col.id})"`;
-      } else {
-        cls += " matrix-empty-cell";
-        click = ` onclick="matrixVote(${row.id},${col.id})"`;
-      }
-
-      html += `<td class="${cls}"${click} title="${esc(row.title)} vs ${esc(col.title)}">${content}</td>`;
-    }
-    html += "</tr>";
-  }
-  html += "</tbody></table>";
-  return html;
-}
-
-function renderGlobalMatrix(films, wins) {
-  const winMap = new Map();
-  for (const w of wins) winMap.set(`${w.winner},${w.loser}`, w.count);
-
-  let html =
-    '<table class="matrix-table"><thead><tr><th class="matrix-corner">\u2193 beat \u2192</th>';
-  for (const f of films) {
-    html += `<th class="matrix-col-header" title="${esc(f.title)}">${esc(shortTitle(f.title))}</th>`;
-  }
-  html += "</tr></thead><tbody>";
-
-  for (const row of films) {
-    html += `<tr><td class="matrix-row-header" title="${esc(row.title)}">${esc(shortTitle(row.title))}</td>`;
-    for (const col of films) {
-      if (row.id === col.id) {
-        html += '<td class="matrix-cell matrix-diag"></td>';
-        continue;
-      }
-      const wRC = winMap.get(`${row.id},${col.id}`) || 0;
-      const wCR = winMap.get(`${col.id},${row.id}`) || 0;
-      const total = wRC + wCR;
-
-      let cls = "matrix-cell";
-      let content = "";
-      if (total > 0) {
-        const rate = wRC / total;
-        if (rate > 0.5) cls += " matrix-favors-row";
-        else if (rate < 0.5) cls += " matrix-favors-col";
-        else cls += " matrix-neutral";
-        content = `${wRC}`;
-      }
-      html += `<td class="${cls}" title="${esc(row.title)}: ${wRC}W / ${esc(col.title)}: ${wCR}W">${content}</td>`;
-    }
-    html += "</tr>";
-  }
-  html += "</tbody></table>";
-  return html;
-}
-
-async function matrixUnvote(winnerId, loserId) {
-  await fetch("/api/unvote", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      user_id: USER_ID,
-      winner_id: winnerId,
-      loser_id: loserId,
-    }),
-  });
-  await Promise.all([loadUserMatrix(), loadGlobalMatrix()]);
-  refreshMatrixModal();
-}
-
-async function matrixVote(winnerId, loserId) {
-  await fetch("/api/vote", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      user_id: USER_ID,
-      winner_id: winnerId,
-      loser_id: loserId,
-    }),
-  });
-  await Promise.all([loadUserMatrix(), loadGlobalMatrix()]);
-  refreshMatrixModal();
-}
-
-// -- Fullscreen Matrix Modal --
-let zoomCleanup = null;
-let modalSourceId = null;
-
-function openMatrixModal(sourceId) {
-  const modal = document.getElementById("matrix-modal");
-  const content = document.getElementById("matrix-modal-content");
-  const source = document.getElementById(sourceId);
-  if (!source) return;
-
-  modalSourceId = sourceId;
-  content.innerHTML = source.innerHTML;
-  modal.classList.add("active");
-  document.body.style.overflow = "hidden";
-  setupPinchZoom(content);
-}
-
-function refreshMatrixModal() {
-  if (!modalSourceId) return;
-  const modal = document.getElementById("matrix-modal");
-  if (!modal.classList.contains("active")) return;
-  const source = document.getElementById(modalSourceId);
-  if (!source) return;
-  const content = document.getElementById("matrix-modal-content");
-  content.innerHTML = source.innerHTML;
-}
-
-function closeMatrixModal() {
-  const modal = document.getElementById("matrix-modal");
-  modal.classList.remove("active");
-  document.body.style.overflow = "";
-  modalSourceId = null;
-  if (zoomCleanup) {
-    zoomCleanup();
-    zoomCleanup = null;
-  }
-  const content = document.getElementById("matrix-modal-content");
-  content.innerHTML = "";
-}
-
-function setupPinchZoom(container) {
-  let scale = 1,
-    tx = 0,
-    ty = 0;
-  let lastDist = 0,
-    lastCX = 0,
-    lastCY = 0;
-  let pinching = false,
-    panning = false;
-  let panSX = 0,
-    panSY = 0;
-
-  function apply() {
-    const inner = container.firstElementChild;
-    if (inner) {
-      inner.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
-      inner.style.transformOrigin = "0 0";
-    }
-  }
-
-  function onTS(e) {
-    if (e.touches.length === 2) {
-      pinching = true;
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      lastDist = Math.hypot(dx, dy);
-      lastCX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      lastCY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      e.preventDefault();
-    } else if (e.touches.length === 1 && scale > 1) {
-      panning = true;
-      panSX = e.touches[0].clientX - tx;
-      panSY = e.touches[0].clientY - ty;
-    }
-  }
-  function onTM(e) {
-    if (pinching && e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.hypot(dx, dy);
-      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      scale = Math.max(0.5, Math.min(8, scale * (dist / lastDist)));
-      tx += cx - lastCX;
-      ty += cy - lastCY;
-      lastDist = dist;
-      lastCX = cx;
-      lastCY = cy;
-      apply();
-      e.preventDefault();
-    } else if (panning && e.touches.length === 1) {
-      tx = e.touches[0].clientX - panSX;
-      ty = e.touches[0].clientY - panSY;
-      apply();
-      e.preventDefault();
-    }
-  }
-  function onTE(e) {
-    if (e.touches.length < 2) pinching = false;
-    if (e.touches.length < 1) panning = false;
-  }
-  function onWheel(e) {
-    e.preventDefault();
-    const rect = container.getBoundingClientRect();
-    const mx = e.clientX - rect.left,
-      my = e.clientY - rect.top;
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const ns = Math.max(0.5, Math.min(8, scale * delta));
-    tx = mx - (mx - tx) * (ns / scale);
-    ty = my - (my - ty) * (ns / scale);
-    scale = ns;
-    apply();
-  }
-
-  container.addEventListener("touchstart", onTS, { passive: false });
-  container.addEventListener("touchmove", onTM, { passive: false });
-  container.addEventListener("touchend", onTE);
-  container.addEventListener("wheel", onWheel, { passive: false });
-
-  zoomCleanup = () => {
-    container.removeEventListener("touchstart", onTS);
-    container.removeEventListener("touchmove", onTM);
-    container.removeEventListener("touchend", onTE);
-    container.removeEventListener("wheel", onWheel);
+  const actions = {
+    navigate: (el) => navigate(el.dataset.page),
+    "toggle-film": (el) => toggleFilm(parseInt(el.dataset.id)),
+    "select-all": () => selectAll(),
+    "deselect-all": () => deselectAll(),
+    "clear-search": () => {
+      const input = document.querySelector(".search-box");
+      if (input) input.value = "";
+      setSearch("");
+    },
+    "pick-a": (el, e) => {
+      if (el.closest("#swipe-arena") && swipeCtrl.wasDrag()) return;
+      e.stopPropagation();
+      swipeCtrl.pickSide(false);
+    },
+    "pick-b": (el, e) => {
+      if (el.closest("#swipe-arena") && swipeCtrl.wasDrag()) return;
+      e.stopPropagation();
+      swipeCtrl.pickSide(true);
+    },
+    "deselect-skip": (el, e) => {
+      e.stopPropagation();
+      deselectAndSkip(parseInt(el.dataset.id));
+    },
+    undo: () => undoVote(),
+    skip: () => loadPair(),
+    "show-select": () => navigate("select"),
+    "show-board": () => navigate("board"),
+    "clear-focus": () => setFocusFilm(null),
+    "matrix-vote": (el) =>
+      matrixAction("/api/vote", parseInt(el.dataset.w), parseInt(el.dataset.l)),
+    "matrix-unvote": (el) =>
+      matrixAction(
+        "/api/unvote",
+        parseInt(el.dataset.w),
+        parseInt(el.dataset.l),
+      ),
   };
+
+  document.body.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    const handler = actions[el.dataset.action];
+    if (handler) handler(el, e);
+  });
+
+  document.body.addEventListener("input", (e) => {
+    if (e.target.matches(".search-box")) setSearch(e.target.value);
+  });
+
+  document.body.addEventListener("change", (e) => {
+    if (e.target.matches("#focus-film"))
+      setFocusFilm(e.target.value ? parseInt(e.target.value) : null);
+  });
+
+  // Poster error handling (capture phase)
+  document.body.addEventListener(
+    "error",
+    (e) => {
+      if (e.target.tagName === "IMG" && e.target.classList.contains("poster")) {
+        brokenPosters.add(e.target.src);
+        const ph = document.createElement("div");
+        ph.className = "poster-ph";
+        ph.innerHTML = "&#127902;";
+        e.target.replaceWith(ph);
+      }
+    },
+    true,
+  );
 }
 
-// -- Vote Notifications (SSE) --
+// ==================== SSE ====================
+
 function initVoteStream() {
   const es = new EventSource("/api/vote/stream");
   es.onmessage = (e) => {
     const data = JSON.parse(e.data);
-    // Refresh active data pages on any vote
-    if (document.getElementById("page-board").classList.contains("active")) {
-      loadLeaderboard();
-    }
-    if (document.getElementById("page-more").classList.contains("active")) {
-      loadMore();
-    }
+    const page = store.get().page;
+    if (page === "board") loadBoard();
+    if (page === "more") loadMore();
     if (data.user_id === USER_ID) return;
-    const container = document.getElementById("toast-container");
-    const toast = document.createElement("div");
-    toast.className = "vote-toast";
-    toast.innerHTML = `Someone voted: <strong>${esc(data.winner_title)}</strong> over ${esc(data.loser_title)}`;
-    container.appendChild(toast);
-    setTimeout(() => toast.remove(), 4000);
+    addToast(
+      `Someone voted: <strong>${esc(data.winner_title)}</strong> over ${esc(data.loser_title)}`,
+    );
   };
   es.onerror = () => {
     es.close();
@@ -869,10 +881,47 @@ function initVoteStream() {
   };
 }
 
+// ==================== BOOT ====================
+
+setupEvents();
+store.subscribe(render);
 initVoteStream();
-init().then(() => {
+
+(async function init() {
+  const [films, board] = await Promise.all([
+    api("/api/films"),
+    api("/api/leaderboard"),
+  ]);
+
+  // Preload posters
+  films.forEach((f) => {
+    if (!f.poster_url) return;
+    const img = new Image();
+    img.onerror = () => brokenPosters.add(f.poster_url);
+    img.src = f.poster_url;
+  });
+
+  // Sort by leaderboard rank
+  const rankById = new Map(board.map((item, i) => [item.film_id, i]));
+  films.sort(
+    (a, b) =>
+      (rankById.get(a.id) ?? Infinity) - (rankById.get(b.id) ?? Infinity),
+  );
+
+  // Default: select all if none selected
+  const s = store.get();
+  let selectedIds = s.selectedIds;
+  if (selectedIds.size === 0) {
+    selectedIds = new Set(films.map((f) => f.id));
+  }
+
+  store.set(() => ({ ...s, films, board, selectedIds }));
+
+  if (selectedIds.size >= 2) await saveSelection();
+
+  // Route
   let page = location.hash.slice(1);
   if (page === "stats") page = "more";
-  if (page && document.getElementById(`page-${page}`)) showPage(page);
-  else showPage("swipe");
-});
+  if (page && document.getElementById(`page-${page}`)) navigate(page);
+  else navigate("swipe");
+})();
