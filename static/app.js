@@ -63,8 +63,14 @@ async function init() {
       (rankById.get(a.id) ?? Infinity) - (rankById.get(b.id) ?? Infinity),
   );
   renderFilmList(allFilms);
+  if (selectedIds.size === 0) {
+    allFilms.forEach((f) => selectedIds.add(f.id));
+    document
+      .querySelectorAll(".film-item")
+      .forEach((el) => el.classList.add("selected"));
+  }
   updateSelectionStatus();
-  if (selectedIds.size >= 2) saveSelection();
+  if (selectedIds.size >= 2) await saveSelection();
 }
 
 // -- Page Navigation --
@@ -810,4 +816,5 @@ init().then(() => {
   let page = location.hash.slice(1);
   if (page === "stats") page = "more";
   if (page && document.getElementById(`page-${page}`)) showPage(page);
+  else showPage("swipe");
 });

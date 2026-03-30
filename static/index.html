@@ -11,10 +11,10 @@
   </head>
   <body>
     <nav class="nav">
-      <button id="nav-select" class="active" onclick="showPage('select')">
-        Select Films
+      <button id="nav-select" onclick="showPage('select')">Select Films</button>
+      <button id="nav-swipe" class="active" onclick="showPage('swipe')">
+        Compare
       </button>
-      <button id="nav-swipe" onclick="showPage('swipe')">Compare</button>
       <button id="nav-board" onclick="showPage('board')">Leaderboard</button>
       <button id="nav-more" onclick="showPage('more')">More</button>
       <a
@@ -29,7 +29,7 @@
     </nav>
 
     <!-- PAGE 1: SELECT -->
-    <div id="page-select" class="page active">
+    <div id="page-select" class="page">
       <div class="select-header">
         <p>Select the films you remember, then compare them head-to-head.</p>
         <input
@@ -50,7 +50,7 @@
     </div>
 
     <!-- PAGE 2: SWIPE -->
-    <div id="page-swipe" class="page">
+    <div id="page-swipe" class="page active">
       <div class="swipe-container" id="swipe-container"></div>
     </div>
 
