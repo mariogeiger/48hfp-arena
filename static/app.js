@@ -328,20 +328,30 @@ function setupSwipe() {
       { passive: true },
     ],
     [window, "touchend", onEnd],
-    [
-      filmA,
-      "click",
-      () => {
-        if (!didDrag) animateVote(false, currentPair.a.id, currentPair.b.id);
-      },
-    ],
-    [
-      filmB,
-      "click",
-      () => {
-        if (!didDrag) animateVote(true, currentPair.b.id, currentPair.a.id);
-      },
-    ],
+    ...[
+      filmA.querySelector(".poster") || filmA.querySelector(".poster-ph"),
+      filmA.querySelector(".title"),
+    ]
+      .filter(Boolean)
+      .map((el) => [
+        el,
+        "click",
+        () => {
+          if (!didDrag) animateVote(false, currentPair.a.id, currentPair.b.id);
+        },
+      ]),
+    ...[
+      filmB.querySelector(".poster") || filmB.querySelector(".poster-ph"),
+      filmB.querySelector(".title"),
+    ]
+      .filter(Boolean)
+      .map((el) => [
+        el,
+        "click",
+        () => {
+          if (!didDrag) animateVote(true, currentPair.b.id, currentPair.a.id);
+        },
+      ]),
     [
       btnA,
       "click",
