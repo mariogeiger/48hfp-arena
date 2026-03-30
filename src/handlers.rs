@@ -503,10 +503,6 @@ pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
     }
 
     HttpResponse::Ok()
-        .content_type("text/csv; charset=utf-8")
-        .insert_header((
-            "Content-Disposition",
-            "inline; filename=\"leaderboard.csv\"",
-        ))
+        .content_type("text/plain; charset=utf-8")
         .body(csv)
 }
