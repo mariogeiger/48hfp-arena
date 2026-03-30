@@ -508,6 +508,40 @@ function renderMore(state, prev) {
         <h3>Global Win Matrix</h3>
         <p class="matrix-hint">Aggregate wins across all voters. Read only.</p>
         <div class="matrix-scroll-wrapper"><div id="global-matrix"></div></div>
+      </div>
+      <div class="about-section">
+        <h3>How It Works</h3>
+        <div class="about-content">
+          <p>
+            Each head-to-head vote feeds a
+            <a href="https://en.wikipedia.org/wiki/Bradley%E2%80%93Terry_model" target="_blank">Bradley&ndash;Terry model</a>,
+            a statistical method for ranking items from pairwise comparisons.
+            Every film gets a strength parameter &beta;. The probability that
+            film&nbsp;A beats film&nbsp;B is simply
+            &beta;<sub>A</sub>&thinsp;/&thinsp;(&beta;<sub>A</sub>&nbsp;+&nbsp;&beta;<sub>B</sub>).
+          </p>
+          <p>
+            Strengths are estimated using the
+            <a href="https://en.wikipedia.org/wiki/MM_algorithm" target="_blank">MM&nbsp;algorithm</a>
+            (minorization&ndash;maximization), which iterates until convergence.
+            Films with zero wins are pinned to a near-zero score.
+            The displayed score is <code>500 &times; log<sub>2</sub>(1 + &beta;)</code>,
+            mapping the raw strength to a human-friendly number.
+          </p>
+          <p>
+            Pairs are not presented randomly. The system uses
+            <a href="https://en.wikipedia.org/wiki/Optimal_design#D-optimality" target="_blank">D-optimal experimental design</a>
+            based on the Fisher Information matrix to pick the most informative
+            pair next &mdash; prioritizing matchups between closely-ranked films
+            and films with fewer comparisons. This means your votes reduce
+            uncertainty as fast as possible.
+          </p>
+          <p>
+            A film appears on the leaderboard once it has at least 10 comparisons
+            from at least 2 different voters. All votes from all users are
+            aggregated into one global ranking.
+          </p>
+        </div>
       </div>`;
     page.dataset.init = "1";
   }

@@ -713,6 +713,37 @@ body.swipe-active {
   color: var(--text-muted);
 }
 
+/* ABOUT / HOW IT WORKS */
+.about-section {
+  padding: 16px;
+}
+.about-section h3 {
+  font-size: 15px;
+  color: var(--text);
+  margin-bottom: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--card-alt);
+}
+.about-content p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.about-content a {
+  color: var(--purple);
+  text-decoration: none;
+}
+.about-content a:hover {
+  text-decoration: underline;
+}
+.about-content code {
+  background: var(--card-alt);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
 /* MATRIX */
 .matrix-section {
   padding: 16px;

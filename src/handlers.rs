@@ -356,7 +356,7 @@ pub async fn global_matrix(data: web::Data<AppState>) -> HttpResponse {
 }
 
 pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
-    const MIN_VOTES: u32 = 3;
+    const MIN_VOTES: u32 = 10;
     const MIN_VOTERS: usize = 2;
 
     let ratings = data.bt_ratings.lock().unwrap();
@@ -455,7 +455,7 @@ pub async fn user_contributions(
 }
 
 pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
-    const MIN_VOTES: u32 = 3;
+    const MIN_VOTES: u32 = 10;
     const MIN_VOTERS: usize = 2;
 
     let ratings = data.bt_ratings.lock().unwrap();
