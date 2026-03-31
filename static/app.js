@@ -338,6 +338,7 @@ function render(state, prev) {
   if (state.board !== prev.board && prev.board && prev.board.length > 0) {
     const oldRank = new Map(prev.board.map((item, i) => [item.film_id, i]));
     const notified = new Set();
+    const swaps = [];
     for (let i = 0; i < state.board.length; i++) {
       const film = state.board[i];
       const oldIdx = oldRank.get(film.film_id);
@@ -347,11 +348,12 @@ function render(state, prev) {
       if (displaced && !notified.has(displaced.film_id)) {
         notified.add(film.film_id);
         notified.add(displaced.film_id);
-        addToast(
+        swaps.push(
           `&#11014;&#65039; <strong>${esc(film.title)}</strong> overtook <strong>${esc(displaced.title)}</strong> → #${i + 1}`,
         );
       }
     }
+    if (swaps.length) addToast(swaps.join("<br>"));
   }
 
   // Active page
