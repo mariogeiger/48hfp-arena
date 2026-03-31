@@ -5,7 +5,7 @@ mod models;
 mod persistence;
 
 use actix_files::Files;
-use actix_web::{App, HttpServer, web};
+use actix_web::{App, HttpServer, middleware, web};
 use std::collections::HashMap;
 use std::net::TcpListener;
 use std::os::unix::io::FromRawFd;
@@ -16,6 +16,7 @@ use persistence::{AppState, load_db};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    env_logger::init();
     let csv_content = std::fs::read_to_string("data.csv").expect("Cannot read data.csv");
     let films: HashMap<usize, models::Film> = csv::parse_csv(&csv_content)
         .into_iter()
@@ -26,11 +27,13 @@ async fn main() -> std::io::Result<()> {
 
     let state = web::Data::new(AppState::new(films, ratings, users, vote_tx, votes_on_disk));
 
-    println!("Server running at http://localhost:4848");
+    log::info!("Server running at http://localhost:4848");
 
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
+            .wrap(middleware::Logger::new("%a \"%r\" %s %b %Dms"))
+            .route("/health", web::get().to(handlers::health))
             .route("/api/films", web::get().to(handlers::get_films))
             .route("/api/selection", web::post().to(handlers::set_selection))
             .route("/api/pair", web::get().to(handlers::get_pair))

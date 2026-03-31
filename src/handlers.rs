@@ -8,6 +8,22 @@ use rand::prelude::*;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::broadcast;
 
+pub async fn health(data: web::Data<AppState>) -> HttpResponse {
+    let ratings_ok = data.bt_ratings.try_lock().is_ok();
+    let users_ok = data.users.try_lock().is_ok();
+    if ratings_ok && users_ok {
+        HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
+    } else {
+        log::error!(
+            "Health check FAILED: ratings_lock={}, users_lock={}",
+            ratings_ok,
+            users_ok
+        );
+        HttpResponse::InternalServerError()
+            .json(serde_json::json!({"status": "deadlocked", "ratings_lock": ratings_ok, "users_lock": users_ok}))
+    }
+}
+
 pub async fn get_films(data: web::Data<AppState>) -> HttpResponse {
     let films: Vec<&Film> = data.films.values().collect();
     HttpResponse::Ok().json(films)
@@ -27,42 +43,45 @@ pub async fn set_selection(
 }
 
 pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> HttpResponse {
-    let mut users = data.users.lock().unwrap();
-    let user = users.entry(query.user_id.clone()).or_default();
+    // Collect user data then drop the lock before acquiring bt_ratings
+    // (lock order: bt_ratings -> users; never hold users while taking bt_ratings)
+    let (votes, seen, remaining) = {
+        let mut users = data.users.lock().unwrap();
+        let user = users.entry(query.user_id.clone()).or_default();
+        let votes = user.compared_pairs.len();
 
-    let votes = user.compared_pairs.len();
+        if user.seen_films.len() < 2 {
+            return HttpResponse::Ok().json(serde_json::json!({"done": true, "votes": votes}));
+        }
 
-    if user.seen_films.len() < 2 {
-        return HttpResponse::Ok().json(serde_json::json!({"done": true, "votes": votes}));
-    }
-
-    let seen = &user.seen_films;
-    let focus = query.focus_film.filter(|f| seen.contains(f));
-    let mut remaining = Vec::new();
-    for i in 0..seen.len() {
-        for j in (i + 1)..seen.len() {
-            let pair = canonical_pair(seen[i], seen[j]);
-            if !user.compared_pairs.contains(&pair) {
-                if focus.is_none() || pair.0 == focus.unwrap() || pair.1 == focus.unwrap() {
+        let seen = user.seen_films.clone();
+        let focus = query.focus_film.filter(|f| seen.contains(f));
+        let mut remaining = Vec::new();
+        for i in 0..seen.len() {
+            for j in (i + 1)..seen.len() {
+                let pair = canonical_pair(seen[i], seen[j]);
+                if !user.compared_pairs.contains(&pair)
+                    && (focus.is_none() || pair.0 == focus.unwrap() || pair.1 == focus.unwrap())
+                {
                     remaining.push(pair);
                 }
             }
         }
-    }
+
+        (votes, seen, remaining)
+    };
 
     if remaining.is_empty() {
         return HttpResponse::Ok().json(serde_json::json!({"done": true, "votes": votes}));
     }
 
     let ratings = data.bt_ratings.lock().unwrap();
-    let scores = fisher_pair_scores(&ratings, seen, &remaining);
+    let scores = fisher_pair_scores(&ratings, &seen, &remaining);
     drop(ratings);
 
     let max_score = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     let min_score = scores.iter().cloned().fold(f64::INFINITY, f64::min);
     let spread = (max_score - min_score).max(1e-10);
-    // Normalize to [0,1] then apply softmax. The top pair gets weight 1.0,
-    // the bottom pair gets exp(-3) ≈ 0.05.
     let beta = 5.0;
     let weights: Vec<f64> = scores
         .iter()
@@ -73,20 +92,16 @@ pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>)
     let dist = WeightedIndex::new(&weights).unwrap();
     let (a, b) = remaining[rng.sample(&dist)];
 
-    let film_a = &data.films[&a];
-    let film_b = &data.films[&b];
-
     HttpResponse::Ok().json(serde_json::json!({
         "done": false,
-        "a": film_a,
-        "b": film_b,
+        "a": data.films[&a],
+        "b": data.films[&b],
         "remaining": remaining.len(),
         "votes": votes,
     }))
 }
 
 pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> HttpResponse {
-    // Validate film IDs exist
     if !data.films.contains_key(&payload.winner_id)
         || !data.films.contains_key(&payload.loser_id)
         || payload.winner_id == payload.loser_id
@@ -97,7 +112,6 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
     let pair = canonical_pair(payload.winner_id, payload.loser_id);
     let key = pair_key(payload.winner_id, payload.loser_id);
 
-    // Check if already voted on this pair
     let prev_winner: Option<usize> = {
         let users = data.users.lock().unwrap();
         if let Some(user) = users.get(&payload.user_id) {
@@ -105,7 +119,6 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
                 if user.vote_outcomes.get(&key) == Some(&payload.winner_id) {
                     return HttpResponse::Ok().json(serde_json::json!({"status": "already_voted"}));
                 }
-                // Different winner → flip
                 user.vote_outcomes.get(&key).copied()
             } else {
                 None
@@ -118,7 +131,6 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
     {
         let mut ratings = data.bt_ratings.lock().unwrap();
 
-        // If flipping, undo the old vote first
         if let Some(prev) = prev_winner {
             let prev_loser = if prev == pair.0 { pair.1 } else { pair.0 };
             if let Some(w) = ratings.get_mut(&prev) {
@@ -131,7 +143,6 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
             }
         }
 
-        // Apply the new vote
         let w = ratings
             .entry(payload.winner_id)
             .or_insert_with(|| BtRating::new(payload.winner_id));
@@ -177,8 +188,11 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
 pub async fn unvote(data: web::Data<AppState>, payload: web::Json<UnvotePayload>) -> HttpResponse {
     let pair = canonical_pair(payload.winner_id, payload.loser_id);
 
+    // Lock bt_ratings first to maintain consistent lock order (bt_ratings -> users)
     {
+        let mut ratings = data.bt_ratings.lock().unwrap();
         let mut users = data.users.lock().unwrap();
+
         let user = match users.get_mut(&payload.user_id) {
             Some(u) => u,
             None => {
@@ -191,10 +205,6 @@ pub async fn unvote(data: web::Data<AppState>, payload: web::Json<UnvotePayload>
         }
         user.vote_outcomes
             .remove(&pair_key(payload.winner_id, payload.loser_id));
-    }
-
-    {
-        let mut ratings = data.bt_ratings.lock().unwrap();
 
         if let Some(w) = ratings.get_mut(&payload.winner_id) {
             w.comparisons = w.comparisons.saturating_sub(1);
@@ -209,7 +219,6 @@ pub async fn unvote(data: web::Data<AppState>, payload: web::Json<UnvotePayload>
     }
 
     data.save();
-
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
@@ -238,8 +247,8 @@ pub async fn vote_stream(data: web::Data<AppState>) -> HttpResponse {
 }
 
 pub async fn stats(data: web::Data<AppState>) -> HttpResponse {
-    let users = data.users.lock().unwrap();
     let ratings = data.bt_ratings.lock().unwrap();
+    let users = data.users.lock().unwrap();
 
     let total_users = users.len();
     let active_users = users
@@ -248,13 +257,12 @@ pub async fn stats(data: web::Data<AppState>) -> HttpResponse {
         .count();
     let total_votes: usize = users.values().map(|u| u.compared_pairs.len()).sum();
     let films_with_votes = ratings.values().filter(|r| r.comparisons > 0).count();
-    let total_films = data.films.len();
 
     HttpResponse::Ok().json(serde_json::json!({
         "total_users": total_users,
         "active_users": active_users,
         "total_votes": total_votes,
-        "total_films": total_films,
+        "total_films": data.films.len(),
         "films_with_votes": films_with_votes,
     }))
 }
@@ -272,19 +280,15 @@ pub async fn user_matrix(
         }
     };
 
-    // Collect film IDs that appear in vote outcomes or compared pairs
     let mut film_ids: HashSet<usize> = HashSet::new();
-    for (key, _) in &user.vote_outcomes {
-        if let Some((a, b)) = key.split_once(',') {
-            if let (Ok(a), Ok(b)) = (a.parse::<usize>(), b.parse::<usize>()) {
-                film_ids.insert(a);
-                film_ids.insert(b);
-            }
+    for key in user.vote_outcomes.keys() {
+        if let Some((a, b)) = parse_pair_key(key) {
+            film_ids.insert(a);
+            film_ids.insert(b);
         }
     }
     for &(a, b) in &user.compared_pairs {
-        let key = pair_key(a, b);
-        if !user.vote_outcomes.contains_key(&key) {
+        if !user.vote_outcomes.contains_key(&pair_key(a, b)) {
             film_ids.insert(a);
             film_ids.insert(b);
         }
@@ -301,9 +305,7 @@ pub async fn user_matrix(
         .vote_outcomes
         .iter()
         .filter_map(|(key, &winner)| {
-            let (a, b) = key.split_once(',')?;
-            let a = a.parse::<usize>().ok()?;
-            let b = b.parse::<usize>().ok()?;
+            let (a, b) = parse_pair_key(key)?;
             Some(serde_json::json!({"film_a": a, "film_b": b, "winner": winner}))
         })
         .collect();
@@ -349,28 +351,20 @@ pub async fn global_matrix(data: web::Data<AppState>) -> HttpResponse {
         }
     }
 
-    HttpResponse::Ok().json(serde_json::json!({
-        "films": films,
-        "wins": wins,
-    }))
+    HttpResponse::Ok().json(serde_json::json!({ "films": films, "wins": wins }))
 }
 
-pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
-    const MIN_VOTES: u32 = 10;
-    const MIN_VOTERS: usize = 2;
+const MIN_VOTES: u32 = 10;
+const MIN_VOTERS: usize = 2;
 
-    let ratings = data.bt_ratings.lock().unwrap();
-    let users = data.users.lock().unwrap();
-
-    // Count unique voters per film
+fn ranked_films<'a>(
+    ratings: &'a HashMap<usize, BtRating>,
+    users: &HashMap<String, UserState>,
+) -> Vec<&'a BtRating> {
     let mut voters_per_film: HashMap<usize, HashSet<&String>> = HashMap::new();
     for (user_id, state) in users.iter() {
-        for pair_key in state.vote_outcomes.keys() {
-            let parts: Vec<&str> = pair_key.split(',').collect();
-            if let (Some(Ok(a)), Some(Ok(b))) = (
-                parts.first().map(|s| s.parse::<usize>()),
-                parts.get(1).map(|s| s.parse::<usize>()),
-            ) {
+        for key in state.vote_outcomes.keys() {
+            if let Some((a, b)) = parse_pair_key(key) {
                 voters_per_film.entry(a).or_default().insert(user_id);
                 voters_per_film.entry(b).or_default().insert(user_id);
             }
@@ -385,6 +379,13 @@ pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
         })
         .collect();
     ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    ranked
+}
+
+pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
+    let ratings = data.bt_ratings.lock().unwrap();
+    let users = data.users.lock().unwrap();
+    let ranked = ranked_films(&ratings, &users);
 
     let board: Vec<serde_json::Value> = ranked
         .iter()
@@ -427,7 +428,6 @@ pub async fn user_contributions(
         })
         .collect();
 
-    // Sort by votes descending, then films_selected descending
     entries.sort_by(|a, b| {
         let va = a["votes"].as_u64().unwrap_or(0);
         let vb = b["votes"].as_u64().unwrap_or(0);
@@ -438,7 +438,6 @@ pub async fn user_contributions(
         })
     });
 
-    // Replace user_ids with anonymous labels for privacy
     for (i, entry) in entries.iter_mut().enumerate() {
         let is_you = entry["is_you"].as_bool().unwrap_or(false);
         entry["label"] = serde_json::json!(if is_you {
@@ -446,7 +445,6 @@ pub async fn user_contributions(
         } else {
             format!("User {}", i + 1)
         });
-        // Remove real user_id from response
         if let Some(obj) = entry.as_object_mut() {
             obj.remove("user_id");
         }
@@ -456,34 +454,9 @@ pub async fn user_contributions(
 }
 
 pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
-    const MIN_VOTES: u32 = 10;
-    const MIN_VOTERS: usize = 2;
-
     let ratings = data.bt_ratings.lock().unwrap();
     let users = data.users.lock().unwrap();
-
-    let mut voters_per_film: HashMap<usize, HashSet<&String>> = HashMap::new();
-    for (user_id, state) in users.iter() {
-        for pair_key in state.vote_outcomes.keys() {
-            let parts: Vec<&str> = pair_key.split(',').collect();
-            if let (Some(Ok(a)), Some(Ok(b))) = (
-                parts.first().map(|s| s.parse::<usize>()),
-                parts.get(1).map(|s| s.parse::<usize>()),
-            ) {
-                voters_per_film.entry(a).or_default().insert(user_id);
-                voters_per_film.entry(b).or_default().insert(user_id);
-            }
-        }
-    }
-
-    let mut ranked: Vec<&BtRating> = ratings
-        .values()
-        .filter(|r| {
-            r.comparisons >= MIN_VOTES
-                && voters_per_film.get(&r.film_id).map_or(0, |s| s.len()) >= MIN_VOTERS
-        })
-        .collect();
-    ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    let ranked = ranked_films(&ratings, &users);
 
     let mut csv = String::from("Rank,Title,Team,City,Rating,Wins,Losses,Comparisons\n");
     for (i, r) in ranked.iter().enumerate() {
@@ -491,15 +464,13 @@ pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
         let title = film.map(|f| f.title.as_str()).unwrap_or("?");
         let team = film.map(|f| f.team.as_str()).unwrap_or("?");
         let city = film.map(|f| f.city.as_str()).unwrap_or("?");
-        let rating = bt_score_to_display(r.score);
-        // Quote fields that may contain commas
         csv.push_str(&format!(
             "{},\"{}\",\"{}\",\"{}\",{},{},{},{}\n",
             i + 1,
             title.replace('"', "\"\""),
             team.replace('"', "\"\""),
             city.replace('"', "\"\""),
-            rating,
+            bt_score_to_display(r.score),
             r.wins(),
             r.losses(),
             r.comparisons,
@@ -509,4 +480,9 @@ pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
     HttpResponse::Ok()
         .content_type("text/plain; charset=utf-8")
         .body(csv)
+}
+
+fn parse_pair_key(key: &str) -> Option<(usize, usize)> {
+    let (a, b) = key.split_once(',')?;
+    Some((a.parse().ok()?, b.parse().ok()?))
 }
