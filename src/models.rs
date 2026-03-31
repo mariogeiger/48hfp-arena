@@ -67,3 +67,8 @@ pub fn pair_key(a: usize, b: usize) -> String {
     let (lo, hi) = canonical_pair(a, b);
     format!("{},{}", lo, hi)
 }
+
+pub fn parse_pair_key(key: &str) -> Option<(usize, usize)> {
+    let (a, b) = key.split_once(',')?;
+    Some((a.parse().ok()?, b.parse().ok()?))
+}

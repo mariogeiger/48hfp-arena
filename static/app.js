@@ -24,7 +24,12 @@ function api(path, body) {
         body: JSON.stringify(body),
       }
     : {};
-  return fetch(path, opts).then((r) => r.json());
+  return fetch(path, opts).then((r) => {
+    if (r.status === 403) {
+      document.getElementById("banned-overlay").classList.remove("hidden");
+    }
+    return r.json();
+  });
 }
 
 const brokenPosters = new Set();

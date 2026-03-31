@@ -1,7 +1,7 @@
-use crate::bt::BtRating;
-use crate::models::{Film, PersistentData, UserState, VoteEvent};
+use crate::bt::{BtRating, run_bradley_terry};
+use crate::models::{Film, PersistentData, UserState, VoteEvent, parse_pair_key};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::broadcast;
@@ -10,6 +10,7 @@ pub const DB_PATH: &str = "db.json";
 const DB_TMP_PATH: &str = "db.json.tmp";
 const BACKUP_DIR: &str = "backups";
 const MAX_BACKUPS: usize = 100;
+const BANNED_PATH: &str = "banned.txt";
 
 pub struct AppState {
     pub films: HashMap<usize, Film>,
@@ -18,6 +19,7 @@ pub struct AppState {
     pub vote_tx: broadcast::Sender<VoteEvent>,
     /// Vote count loaded from disk — save() refuses to write fewer votes than this.
     votes_on_disk: AtomicUsize,
+    pub banned: Mutex<HashSet<String>>,
 }
 
 impl AppState {
@@ -28,13 +30,68 @@ impl AppState {
         vote_tx: broadcast::Sender<VoteEvent>,
         votes_on_disk: usize,
     ) -> Self {
+        let banned = load_banned();
         Self {
             films,
             bt_ratings: Mutex::new(ratings),
             users: Mutex::new(users),
             vote_tx,
             votes_on_disk: AtomicUsize::new(votes_on_disk),
+            banned: Mutex::new(banned),
         }
+    }
+
+    pub fn is_banned(&self, user_id: &str) -> bool {
+        self.banned.lock().unwrap().contains(user_id)
+    }
+
+    /// Reload banned.txt; if it changed, recompute BT ratings from scratch
+    /// excluding banned users' votes.
+    pub fn reload_banned(&self) {
+        let new_banned = load_banned();
+        {
+            let mut current = self.banned.lock().unwrap();
+            if *current == new_banned {
+                return;
+            }
+            *current = new_banned.clone();
+        }
+        log::info!("Ban list changed, recomputing ratings...");
+
+        let mut ratings = self.bt_ratings.lock().unwrap();
+        let users = self.users.lock().unwrap();
+
+        // Reset all ratings
+        for r in ratings.values_mut() {
+            r.score = 1.0;
+            r.comparisons = 0;
+            r.wins_against.clear();
+        }
+
+        // Replay all non-banned votes
+        for (uid, state) in users.iter() {
+            if new_banned.contains(uid) {
+                continue;
+            }
+            for (key, &winner) in &state.vote_outcomes {
+                let Some((a, b)) = parse_pair_key(key) else {
+                    continue;
+                };
+                let loser = if winner == a { b } else { a };
+
+                let w = ratings
+                    .entry(winner)
+                    .or_insert_with(|| BtRating::new(winner));
+                w.comparisons += 1;
+                *w.wins_against.entry(loser).or_insert(0) += 1;
+
+                let l = ratings.entry(loser).or_insert_with(|| BtRating::new(loser));
+                l.comparisons += 1;
+            }
+        }
+
+        run_bradley_terry(&mut ratings);
+        log::info!("Ratings recomputed after ban list update");
     }
 
     pub fn save(&self) {
@@ -214,4 +271,18 @@ pub fn load_db(
         ratings.entry(id).or_insert_with(|| BtRating::new(id));
     }
     (ratings, users, votes_on_disk)
+}
+
+/// Read banned user IDs from banned.txt (one UUID per line, # comments allowed).
+pub fn load_banned() -> HashSet<String> {
+    let content = match std::fs::read_to_string(BANNED_PATH) {
+        Ok(c) => c,
+        Err(_) => return HashSet::new(),
+    };
+    content
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| l.to_string())
+        .collect()
 }

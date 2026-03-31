@@ -2,4 +2,5 @@
 db.json
 db.json.tmp
 backups/
+banned.txt
 node_modules/

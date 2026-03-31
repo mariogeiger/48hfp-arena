@@ -27,6 +27,16 @@ async fn main() -> std::io::Result<()> {
 
     let state = web::Data::new(AppState::new(films, ratings, users, vote_tx, votes_on_disk));
 
+    // Poll banned.txt every 5 seconds for changes
+    let ban_state = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            ban_state.reload_banned();
+        }
+    });
+
     log::info!("Server running at http://localhost:4848");
 
     let server = HttpServer::new(move || {

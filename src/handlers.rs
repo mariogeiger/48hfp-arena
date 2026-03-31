@@ -33,6 +33,9 @@ pub async fn set_selection(
     data: web::Data<AppState>,
     payload: web::Json<SelectionPayload>,
 ) -> HttpResponse {
+    if data.is_banned(&payload.user_id) {
+        return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
+    }
     {
         let mut users = data.users.lock().unwrap();
         let user = users.entry(payload.user_id.clone()).or_default();
@@ -43,6 +46,9 @@ pub async fn set_selection(
 }
 
 pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> HttpResponse {
+    if data.is_banned(&query.user_id) {
+        return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
+    }
     // Collect user data then drop the lock before acquiring bt_ratings
     // (lock order: bt_ratings -> users; never hold users while taking bt_ratings)
     let (votes, seen, remaining) = {
@@ -102,6 +108,9 @@ pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>)
 }
 
 pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> HttpResponse {
+    if data.is_banned(&payload.user_id) {
+        return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
+    }
     if !data.films.contains_key(&payload.winner_id)
         || !data.films.contains_key(&payload.loser_id)
         || payload.winner_id == payload.loser_id
@@ -186,6 +195,9 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
 }
 
 pub async fn unvote(data: web::Data<AppState>, payload: web::Json<UnvotePayload>) -> HttpResponse {
+    if data.is_banned(&payload.user_id) {
+        return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
+    }
     let pair = canonical_pair(payload.winner_id, payload.loser_id);
 
     // Lock bt_ratings first to maintain consistent lock order (bt_ratings -> users)
@@ -249,13 +261,18 @@ pub async fn vote_stream(data: web::Data<AppState>) -> HttpResponse {
 pub async fn stats(data: web::Data<AppState>) -> HttpResponse {
     let ratings = data.bt_ratings.lock().unwrap();
     let users = data.users.lock().unwrap();
+    let banned = data.banned.lock().unwrap();
 
-    let total_users = users.len();
+    let total_users = users.keys().filter(|uid| !banned.contains(*uid)).count();
     let active_users = users
-        .values()
-        .filter(|u| !u.compared_pairs.is_empty())
+        .iter()
+        .filter(|(uid, u)| !banned.contains(*uid) && !u.compared_pairs.is_empty())
         .count();
-    let total_votes: usize = users.values().map(|u| u.compared_pairs.len()).sum();
+    let total_votes: usize = users
+        .iter()
+        .filter(|(uid, _)| !banned.contains(*uid))
+        .map(|(_, u)| u.compared_pairs.len())
+        .sum();
     let films_with_votes = ratings.values().filter(|r| r.comparisons > 0).count();
 
     HttpResponse::Ok().json(serde_json::json!({
@@ -360,9 +377,13 @@ const MIN_VOTERS: usize = 2;
 fn ranked_films<'a>(
     ratings: &'a HashMap<usize, BtRating>,
     users: &HashMap<String, UserState>,
+    banned: &HashSet<String>,
 ) -> Vec<&'a BtRating> {
     let mut voters_per_film: HashMap<usize, HashSet<&String>> = HashMap::new();
     for (user_id, state) in users.iter() {
+        if banned.contains(user_id) {
+            continue;
+        }
         for key in state.vote_outcomes.keys() {
             if let Some((a, b)) = parse_pair_key(key) {
                 voters_per_film.entry(a).or_default().insert(user_id);
@@ -385,7 +406,8 @@ fn ranked_films<'a>(
 pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
     let ratings = data.bt_ratings.lock().unwrap();
     let users = data.users.lock().unwrap();
-    let ranked = ranked_films(&ratings, &users);
+    let banned = data.banned.lock().unwrap();
+    let ranked = ranked_films(&ratings, &users, &banned);
 
     let board: Vec<serde_json::Value> = ranked
         .iter()
@@ -414,10 +436,11 @@ pub async fn user_contributions(
     query: web::Query<PairRequest>,
 ) -> HttpResponse {
     let users = data.users.lock().unwrap();
+    let banned = data.banned.lock().unwrap();
 
     let mut entries: Vec<serde_json::Value> = users
         .iter()
-        .filter(|(_, state)| !state.compared_pairs.is_empty())
+        .filter(|(uid, state)| !banned.contains(*uid) && !state.compared_pairs.is_empty())
         .map(|(uid, state)| {
             serde_json::json!({
                 "user_id": uid,
@@ -456,7 +479,8 @@ pub async fn user_contributions(
 pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
     let ratings = data.bt_ratings.lock().unwrap();
     let users = data.users.lock().unwrap();
-    let ranked = ranked_films(&ratings, &users);
+    let banned = data.banned.lock().unwrap();
+    let ranked = ranked_films(&ratings, &users, &banned);
 
     let mut csv = String::from("Rank,Title,Team,City,Rating,Wins,Losses,Comparisons\n");
     for (i, r) in ranked.iter().enumerate() {
@@ -480,9 +504,4 @@ pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
     HttpResponse::Ok()
         .content_type("text/plain; charset=utf-8")
         .body(csv)
-}
-
-fn parse_pair_key(key: &str) -> Option<(usize, usize)> {
-    let (a, b) = key.split_once(',')?;
-    Some((a.parse().ok()?, b.parse().ok()?))
 }
