@@ -441,12 +441,10 @@ function renderSwipe(state, prev) {
     page.dataset.init = "1";
   }
 
-  // Focus picker
-  if (
-    state.films !== prev.films ||
-    state.selectedIds !== prev.selectedIds ||
-    state.focusFilmId !== prev.focusFilmId
-  ) {
+  // Focus picker — rebuild options only when the list changes;
+  // update value in-place to avoid destroying the <select> while
+  // the browser's native dropdown is still open (causes it to stick).
+  if (state.films !== prev.films || state.selectedIds !== prev.selectedIds) {
     const options = state.films
       .filter((f) => state.selectedIds.has(f.id))
       .map(
@@ -462,6 +460,9 @@ function renderSwipe(state, prev) {
           ${options}
         </select>
       </div>`;
+  } else if (state.focusFilmId !== prev.focusFilmId) {
+    const sel = document.getElementById("focus-film");
+    if (sel) sel.value = state.focusFilmId ?? "";
   }
 
   // Pair or done state — full re-render only when pair changes
