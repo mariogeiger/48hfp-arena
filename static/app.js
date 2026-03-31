@@ -286,6 +286,35 @@ function addToast(html) {
   );
 }
 
+/** Capture old label→value pairs from the DOM; returns a function that,
+ *  after re-render, adds `cls` to values that changed and auto-removes it. */
+function trackChanges(container, itemSel, labelSel, valueSel, cls) {
+  const old = {};
+  container.querySelectorAll(itemSel).forEach((el) => {
+    const label = el.querySelector(labelSel)?.textContent;
+    const value = el.querySelector(valueSel)?.textContent;
+    if (label) old[label] = value;
+  });
+  return () =>
+    container.querySelectorAll(itemSel).forEach((el) => {
+      const label = el.querySelector(labelSel)?.textContent;
+      const valueEl = el.querySelector(valueSel);
+      if (
+        label &&
+        valueEl &&
+        label in old &&
+        old[label] !== valueEl.textContent
+      ) {
+        valueEl.classList.add(cls);
+        valueEl.addEventListener(
+          "animationend",
+          () => valueEl.classList.remove(cls),
+          { once: true },
+        );
+      }
+    });
+}
+
 // ==================== RENDERING ====================
 
 function render(state, prev) {
@@ -491,6 +520,26 @@ function renderBoard(state, prev) {
     page.dataset.init = "1";
   }
   if (state.board !== prev.board) {
+    // Detect rank swaps and show global notifications
+    if (prev.board && prev.board.length > 0) {
+      const oldRank = new Map(prev.board.map((item, i) => [item.film_id, i]));
+      const notified = new Set();
+      for (let i = 0; i < state.board.length; i++) {
+        const film = state.board[i];
+        const oldIdx = oldRank.get(film.film_id);
+        if (oldIdx === undefined || oldIdx <= i || notified.has(film.film_id))
+          continue;
+        // This film moved up — who was at this position before?
+        const displaced = prev.board[i];
+        if (displaced && !notified.has(displaced.film_id)) {
+          notified.add(film.film_id);
+          notified.add(displaced.film_id);
+          addToast(
+            `&#11014;&#65039; <strong>${esc(film.title)}</strong> overtook <strong>${esc(displaced.title)}</strong> → #${i + 1}`,
+          );
+        }
+      }
+    }
     document.getElementById("board-list").innerHTML =
       state.board.length === 0
         ? `<div class="board-empty"><h3>No votes yet</h3><p>Start comparing films to build the leaderboard!</p></div>`
@@ -611,7 +660,15 @@ function renderMore(state, prev) {
 
   if (state.stats !== prev.stats && state.stats) {
     const s = state.stats;
-    document.getElementById("stats-content").innerHTML = `
+    const statsContainer = document.getElementById("stats-content");
+    const applyChanges = trackChanges(
+      statsContainer,
+      ".stat-card",
+      ".stat-label",
+      ".stat-value",
+      "changed",
+    );
+    statsContainer.innerHTML = `
       <div class="stats-grid">
         ${[
           [s.total_votes, "Total Votes"],
@@ -626,11 +683,19 @@ function renderMore(state, prev) {
           )
           .join("")}
       </div>`;
+    applyChanges();
   }
 
   if (state.contributions !== prev.contributions) {
     const data = state.contributions;
     const container = document.getElementById("contributions-content");
+    const applyChanges = trackChanges(
+      container,
+      ".contrib-item",
+      ".contrib-label",
+      ".contrib-votes",
+      "changed",
+    );
     if (data.length === 0) {
       container.innerHTML = '<p class="matrix-empty">No contributions yet.</p>';
     } else {
@@ -653,6 +718,7 @@ function renderMore(state, prev) {
         </div>`,
         )
         .join("");
+      applyChanges();
     }
   }
 
@@ -980,7 +1046,7 @@ function initVoteStream() {
   es.onmessage = (e) => {
     const data = JSON.parse(e.data);
     const page = store.get().page;
-    if (page === "board") loadBoard();
+    loadBoard(); // always load board so we can detect rank swaps
     if (page === "more") loadMore();
     if (data.user_id === USER_ID) return;
     addToast(
