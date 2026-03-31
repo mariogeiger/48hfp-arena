@@ -30,14 +30,13 @@ impl AppState {
         vote_tx: broadcast::Sender<VoteEvent>,
         votes_on_disk: usize,
     ) -> Self {
-        let banned = load_banned();
         Self {
             films,
             bt_ratings: Mutex::new(ratings),
             users: Mutex::new(users),
             vote_tx,
             votes_on_disk: AtomicUsize::new(votes_on_disk),
-            banned: Mutex::new(banned),
+            banned: Mutex::new(HashSet::new()),
         }
     }
 
