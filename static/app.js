@@ -329,6 +329,26 @@ function render(state, prev) {
     });
   }
 
+  // Detect rank swaps globally (before page render so toasts appear on any page)
+  if (state.board !== prev.board && prev.board && prev.board.length > 0) {
+    const oldRank = new Map(prev.board.map((item, i) => [item.film_id, i]));
+    const notified = new Set();
+    for (let i = 0; i < state.board.length; i++) {
+      const film = state.board[i];
+      const oldIdx = oldRank.get(film.film_id);
+      if (oldIdx === undefined || oldIdx <= i || notified.has(film.film_id))
+        continue;
+      const displaced = prev.board[i];
+      if (displaced && !notified.has(displaced.film_id)) {
+        notified.add(film.film_id);
+        notified.add(displaced.film_id);
+        addToast(
+          `&#11014;&#65039; <strong>${esc(film.title)}</strong> overtook <strong>${esc(displaced.title)}</strong> → #${i + 1}`,
+        );
+      }
+    }
+  }
+
   // Active page
   const renderers = {
     select: renderSelect,
@@ -520,26 +540,6 @@ function renderBoard(state, prev) {
     page.dataset.init = "1";
   }
   if (state.board !== prev.board) {
-    // Detect rank swaps and show global notifications
-    if (prev.board && prev.board.length > 0) {
-      const oldRank = new Map(prev.board.map((item, i) => [item.film_id, i]));
-      const notified = new Set();
-      for (let i = 0; i < state.board.length; i++) {
-        const film = state.board[i];
-        const oldIdx = oldRank.get(film.film_id);
-        if (oldIdx === undefined || oldIdx <= i || notified.has(film.film_id))
-          continue;
-        // This film moved up — who was at this position before?
-        const displaced = prev.board[i];
-        if (displaced && !notified.has(displaced.film_id)) {
-          notified.add(film.film_id);
-          notified.add(displaced.film_id);
-          addToast(
-            `&#11014;&#65039; <strong>${esc(film.title)}</strong> overtook <strong>${esc(displaced.title)}</strong> → #${i + 1}`,
-          );
-        }
-      }
-    }
     document.getElementById("board-list").innerHTML =
       state.board.length === 0
         ? `<div class="board-empty"><h3>No votes yet</h3><p>Start comparing films to build the leaderboard!</p></div>`
