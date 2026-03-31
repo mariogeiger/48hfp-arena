@@ -1086,20 +1086,15 @@ initVoteStream();
       (rankById.get(a.id) ?? Infinity) - (rankById.get(b.id) ?? Infinity),
   );
 
-  // Default: select all if none selected
   const s = store.get();
-  let selectedIds = s.selectedIds;
-  if (selectedIds.size === 0) {
-    selectedIds = new Set(films.map((f) => f.id));
-  }
+  store.set(() => ({ ...s, films, board }));
 
-  store.set(() => ({ ...s, films, board, selectedIds }));
+  if (s.selectedIds.size >= 2) await saveSelection();
 
-  if (selectedIds.size >= 2) await saveSelection();
-
-  // Route
+  // Route: send new users (nothing selected) to the select page
   let page = location.hash.slice(1);
   if (page === "stats") page = "more";
+  if (s.selectedIds.size === 0 && !page) page = "select";
   if (page && document.getElementById(`page-${page}`)) navigate(page);
   else navigate("swipe");
 })();

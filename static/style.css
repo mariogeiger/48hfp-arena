@@ -966,10 +966,11 @@ body.swipe-active {
   font-size: 13px;
   max-width: 400px;
   width: 100%;
+  opacity: 0.5;
+  pointer-events: none;
   animation:
     toast-in 0.3s ease,
     toast-out 0.4s ease 3.6s forwards;
-  pointer-events: auto;
 }
 .vote-toast strong {
   color: var(--text-strong);
@@ -980,13 +981,13 @@ body.swipe-active {
     transform: translateY(20px);
   }
   to {
-    opacity: 1;
+    opacity: 0.5;
     transform: translateY(0);
   }
 }
 @keyframes toast-out {
   from {
-    opacity: 1;
+    opacity: 0.5;
   }
   to {
     opacity: 0;
