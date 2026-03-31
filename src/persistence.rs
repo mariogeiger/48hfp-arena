@@ -56,20 +56,26 @@ impl AppState {
             *current = new_banned.clone();
         }
         log::info!("Ban list changed, recomputing ratings...");
-
         let mut ratings = self.bt_ratings.lock().unwrap();
         let users = self.users.lock().unwrap();
+        Self::recompute_ratings(&mut ratings, &users, &new_banned);
+        log::info!("Ratings recomputed after ban list update");
+    }
 
-        // Reset all ratings
+    /// Recompute BT ratings from scratch using all non-banned users' votes.
+    /// Caller must already hold both bt_ratings and users locks.
+    pub fn recompute_ratings(
+        ratings: &mut HashMap<usize, BtRating>,
+        users: &HashMap<String, UserState>,
+        banned: &HashSet<String>,
+    ) {
         for r in ratings.values_mut() {
             r.score = 1.0;
             r.comparisons = 0;
             r.wins_against.clear();
         }
-
-        // Replay all non-banned votes
         for (uid, state) in users.iter() {
-            if new_banned.contains(uid) {
+            if banned.contains(uid) {
                 continue;
             }
             for (key, &winner) in &state.vote_outcomes {
@@ -77,20 +83,24 @@ impl AppState {
                     continue;
                 };
                 let loser = if winner == a { b } else { a };
-
                 let w = ratings
                     .entry(winner)
                     .or_insert_with(|| BtRating::new(winner));
                 w.comparisons += 1;
                 *w.wins_against.entry(loser).or_insert(0) += 1;
-
                 let l = ratings.entry(loser).or_insert_with(|| BtRating::new(loser));
                 l.comparisons += 1;
             }
         }
+        run_bradley_terry(ratings);
+    }
 
-        run_bradley_terry(&mut ratings);
-        log::info!("Ratings recomputed after ban list update");
+    /// Force the vote floor to the current in-memory count, so save() won't
+    /// refuse after a legitimate vote deletion.
+    pub fn sync_vote_floor(&self) {
+        let users = self.users.lock().unwrap();
+        let current = count_votes(&users);
+        self.votes_on_disk.store(current, Ordering::Relaxed);
     }
 
     pub fn save(&self) {

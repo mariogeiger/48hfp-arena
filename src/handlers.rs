@@ -234,6 +234,33 @@ pub async fn unvote(data: web::Data<AppState>, payload: web::Json<UnvotePayload>
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
+pub async fn reset_votes(
+    data: web::Data<AppState>,
+    payload: web::Json<PairRequest>,
+) -> HttpResponse {
+    if data.is_banned(&payload.user_id) {
+        return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
+    }
+
+    {
+        let mut ratings = data.bt_ratings.lock().unwrap();
+        let mut users = data.users.lock().unwrap();
+        let banned = data.banned.lock().unwrap();
+
+        if let Some(user) = users.get_mut(&payload.user_id) {
+            user.compared_pairs.clear();
+            user.vote_outcomes.clear();
+        }
+
+        AppState::recompute_ratings(&mut ratings, &users, &banned);
+    }
+
+    data.sync_vote_floor();
+    data.save();
+
+    HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
+}
+
 pub async fn vote_stream(data: web::Data<AppState>) -> HttpResponse {
     let mut rx = data.vote_tx.subscribe();
     let stream = async_stream::stream! {
@@ -447,10 +474,15 @@ pub async fn user_contributions(
         .iter()
         .filter(|(uid, state)| !banned.contains(*uid) && !state.compared_pairs.is_empty())
         .map(|(uid, state)| {
+            let mut films_voted: HashSet<usize> = HashSet::new();
+            for &(a, b) in &state.compared_pairs {
+                films_voted.insert(a);
+                films_voted.insert(b);
+            }
             serde_json::json!({
                 "user_id": uid,
                 "is_you": *uid == query.user_id,
-                "films_selected": state.seen_films.len(),
+                "films_selected": films_voted.len(),
                 "votes": state.compared_pairs.len(),
             })
         })

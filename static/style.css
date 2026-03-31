@@ -775,6 +775,25 @@ body.swipe-active {
   font-size: 12px;
 }
 
+/* RESET VOTES */
+.reset-section {
+  padding: 16px 16px 0;
+}
+.reset-btn {
+  background: var(--card);
+  color: #b33;
+  border: 1px solid #d99;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+}
+.reset-btn:hover {
+  background: #fef0f0;
+}
+
 /* SUGGEST CORRECTION */
 .suggest-section {
   padding: 16px;

@@ -49,6 +49,7 @@ async fn main() -> std::io::Result<()> {
             .route("/api/pair", web::get().to(handlers::get_pair))
             .route("/api/vote", web::post().to(handlers::vote))
             .route("/api/unvote", web::post().to(handlers::unvote))
+            .route("/api/reset-votes", web::post().to(handlers::reset_votes))
             .route("/api/vote/stream", web::get().to(handlers::vote_stream))
             .route("/api/leaderboard", web::get().to(handlers::leaderboard))
             .route(

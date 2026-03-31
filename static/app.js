@@ -248,6 +248,15 @@ async function matrixAction(endpoint, w, l) {
   store.set((s) => ({ ...s, userMatrix, globalMatrix }));
 }
 
+async function resetVotes() {
+  if (!confirm("This will permanently delete all your votes. Are you sure?"))
+    return;
+  await api("/api/reset-votes", { user_id: USER_ID });
+  loadMore();
+  loadBoard();
+  loadPair();
+}
+
 function submitSuggestion() {
   const filmSelect = document.getElementById("suggest-film");
   const title = document.getElementById("suggest-title").value.trim();
@@ -581,6 +590,9 @@ function renderMore(state, prev) {
         <h1>More</h1>
         <p>Voting stats, your votes matrix, and global results</p>
       </div>
+      <div class="reset-section">
+        <button class="reset-btn" data-action="reset-votes">Reset All My Votes</button>
+      </div>
       <div id="stats-content"></div>
       <div class="stats-section">
         <h3>Voter Contributions</h3>
@@ -682,7 +694,6 @@ function renderMore(state, prev) {
           [s.total_votes, "Total Votes"],
           [s.active_users, "Active Voters"],
           [s.total_users, "Total Visitors"],
-          [s.films_with_votes, "Films Voted On"],
           [s.total_films, "Total Films"],
         ]
           .map(
@@ -998,6 +1009,7 @@ function setupEvents() {
         parseInt(el.dataset.w),
         parseInt(el.dataset.l),
       ),
+    "reset-votes": () => resetVotes(),
     "submit-suggestion": () => submitSuggestion(),
     "welcome-promise": () => {
       localStorage.setItem("filmrank_promised", "1");
