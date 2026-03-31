@@ -531,7 +531,7 @@ function renderBoard(state, prev) {
     page.innerHTML = `
       <div class="page-header">
         <h1>Leaderboard</h1>
-        <p>Bradley-Terry rankings based on all user votes</p>
+        <p>Bradley-Terry rankings based on all voter comparisons</p>
       </div>
       <div class="board-list" id="board-list"></div>
       <div class="board-export">
@@ -575,7 +575,7 @@ function renderMore(state, prev) {
       </div>
       <div id="stats-content"></div>
       <div class="stats-section">
-        <h3>User Contributions</h3>
+        <h3>Voter Contributions</h3>
         <div id="contributions-content"></div>
       </div>
       <div class="suggest-section">

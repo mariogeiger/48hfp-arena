@@ -443,7 +443,7 @@ pub async fn user_contributions(
         entry["label"] = serde_json::json!(if is_you {
             "You".to_string()
         } else {
-            format!("User {}", i + 1)
+            format!("Voter {}", i + 1)
         });
         if let Some(obj) = entry.as_object_mut() {
             obj.remove("user_id");
