@@ -399,7 +399,12 @@ fn ranked_films<'a>(
                 && voters_per_film.get(&r.film_id).map_or(0, |s| s.len()) >= MIN_VOTERS
         })
         .collect();
-    ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    ranked.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap()
+            .then(a.film_id.cmp(&b.film_id))
+    });
     ranked
 }
 
