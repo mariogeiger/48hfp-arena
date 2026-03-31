@@ -991,6 +991,10 @@ function setupEvents() {
         parseInt(el.dataset.l),
       ),
     "submit-suggestion": () => submitSuggestion(),
+    "welcome-promise": () => {
+      localStorage.setItem("filmrank_promised", "1");
+      document.getElementById("welcome-overlay").classList.add("hidden");
+    },
   };
 
   document.body.addEventListener("click", (e) => {
@@ -1064,6 +1068,10 @@ function initVoteStream() {
 setupEvents();
 store.subscribe(render);
 initVoteStream();
+
+if (localStorage.getItem("filmrank_promised")) {
+  document.getElementById("welcome-overlay").classList.add("hidden");
+}
 
 (async function init() {
   const [films, board] = await Promise.all([
