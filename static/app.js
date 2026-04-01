@@ -620,7 +620,7 @@ function renderMore(state, prev) {
       </div>
       <div class="matrix-section">
         <h3>Global Win Matrix</h3>
-        <p class="matrix-hint">Aggregate wins across all voters. Read only.</p>
+        <p class="matrix-hint">Color = surprise: green = wins more than model expects, red = wins less. Hover for details.</p>
         <div class="matrix-scroll-wrapper"><div id="global-matrix"></div></div>
       </div>
       <div class="about-section">
@@ -765,18 +765,37 @@ function renderMore(state, prev) {
         ];
         legacySet.add(`${a},${b}`);
       }
-      container.innerHTML = renderMatrixTable(films, (row, col) => {
-        const key = `${Math.min(row.id, col.id)},${Math.max(row.id, col.id)}`;
-        const winner = voteMap.get(key);
-        const title = `${esc(row.title)} vs ${esc(col.title)}`;
-        if (winner !== undefined) {
-          const won = winner === row.id;
-          const [w, l] = won ? [row.id, col.id] : [col.id, row.id];
-          return `<td class="matrix-cell ${won ? "matrix-win" : "matrix-loss"}" data-action="matrix-unvote" data-w="${w}" data-l="${l}" title="${title}">${won ? "W" : "L"}</td>`;
-        }
-        if (legacySet.has(key))
-          return `<td class="matrix-cell matrix-legacy" data-action="matrix-vote" data-w="${row.id}" data-l="${col.id}" title="${title}">?</td>`;
-        return `<td class="matrix-cell matrix-empty-cell" data-action="matrix-vote" data-w="${row.id}" data-l="${col.id}" title="${title}"></td>`;
+      renderMatrixCanvas(container, films, {
+        cellInfo: (ri, ci) => {
+          const row = films[ri],
+            col = films[ci];
+          const key = `${Math.min(row.id, col.id)},${Math.max(row.id, col.id)}`;
+          const winner = voteMap.get(key);
+          if (winner !== undefined) {
+            const won = winner === row.id;
+            return { bg: won ? "win" : "loss", text: won ? "W" : "L" };
+          }
+          if (legacySet.has(key)) return { bg: "legacy", text: "?" };
+          return { bg: "empty", text: "" };
+        },
+        tooltip: (ri, ci) => {
+          const row = films[ri],
+            col = films[ci];
+          return `${row.title} vs ${col.title}`;
+        },
+        onClick: (ri, ci) => {
+          const row = films[ri],
+            col = films[ci];
+          const key = `${Math.min(row.id, col.id)},${Math.max(row.id, col.id)}`;
+          const winner = voteMap.get(key);
+          if (winner !== undefined) {
+            const won = winner === row.id;
+            const [w, l] = won ? [row.id, col.id] : [col.id, row.id];
+            matrixAction("/api/unvote", w, l);
+          } else {
+            matrixAction("/api/vote", row.id, col.id);
+          }
+        },
       });
     }
   }
@@ -790,21 +809,38 @@ function renderMore(state, prev) {
       const films = sortFilmsByBoard(data.films, state.board);
       const winMap = new Map();
       for (const w of data.wins) winMap.set(`${w.winner},${w.loser}`, w.count);
-      container.innerHTML = renderMatrixTable(films, (row, col) => {
-        const wRC = winMap.get(`${row.id},${col.id}`) || 0;
-        const wCR = winMap.get(`${col.id},${row.id}`) || 0;
-        const total = wRC + wCR;
-        let cls = "matrix-cell";
-        if (total > 0) {
-          const rate = wRC / total;
-          cls +=
-            rate > 0.5
-              ? " matrix-favors-row"
-              : rate < 0.5
-                ? " matrix-favors-col"
-                : " matrix-neutral";
-        }
-        return `<td class="${cls}" title="${esc(row.title)}: ${wRC}W / ${esc(col.title)}: ${wCR}W">${total > 0 ? wRC : ""}</td>`;
+      const scoreMap = new Map();
+      for (const f of films) scoreMap.set(f.id, f.score || 1.0);
+      renderMatrixCanvas(container, films, {
+        cellInfo: (ri, ci) => {
+          const row = films[ri],
+            col = films[ci];
+          const wRC = winMap.get(`${row.id},${col.id}`) || 0;
+          const wCR = winMap.get(`${col.id},${row.id}`) || 0;
+          const total = wRC + wCR;
+          if (total === 0) return { bg: "empty", text: "", residual: 0 };
+          const observed = wRC / total;
+          const bi = scoreMap.get(row.id),
+            bj = scoreMap.get(col.id);
+          const predicted = bi / (bi + bj);
+          const residual = observed - predicted;
+          return { bg: "residual", text: String(wRC), residual };
+        },
+        tooltip: (ri, ci) => {
+          const row = films[ri],
+            col = films[ci];
+          const wRC = winMap.get(`${row.id},${col.id}`) || 0;
+          const wCR = winMap.get(`${col.id},${row.id}`) || 0;
+          const total = wRC + wCR;
+          if (total === 0) return `${row.title} vs ${col.title}: no votes`;
+          const observed = wRC / total;
+          const bi = scoreMap.get(row.id),
+            bj = scoreMap.get(col.id);
+          const predicted = bi / (bi + bj);
+          const residual = observed - predicted;
+          return `${row.title} vs ${col.title}: observed ${(observed * 100).toFixed(0)}% / model ${(predicted * 100).toFixed(0)}% (${residual > 0 ? "+" : ""}${(residual * 100).toFixed(0)}%)`;
+        },
+        onClick: null,
       });
     }
   }
@@ -817,26 +853,218 @@ function sortFilmsByBoard(films, board) {
   );
 }
 
-function renderMatrixTable(films, cellFn) {
-  const headers = films
-    .map(
-      (f) =>
-        `<th class="matrix-col-header" title="${esc(f.title)}">${esc(shortTitle(f.title))}</th>`,
-    )
-    .join("");
-  const rows = films
-    .map((row) => {
-      const cells = films
-        .map((col) =>
-          row.id === col.id
-            ? '<td class="matrix-cell matrix-diag"></td>'
-            : cellFn(row, col),
-        )
-        .join("");
-      return `<tr><td class="matrix-row-header" title="${esc(row.title)}">${esc(shortTitle(row.title))}</td>${cells}</tr>`;
-    })
-    .join("");
-  return `<table class="matrix-table"><thead><tr><th class="matrix-corner">\u2193 beat \u2192</th>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
+// -- Canvas Matrix --
+
+function getMatrixTooltip() {
+  let el = document.getElementById("matrix-tooltip");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "matrix-tooltip";
+    el.style.display = "none";
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+const MATRIX_CELL = 20;
+const MATRIX_HEADER = 70;
+const MATRIX_FONT =
+  "7px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const MATRIX_CELL_FONT =
+  "bold 8px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+function getMatrixColors() {
+  const s = getComputedStyle(document.documentElement);
+  return {
+    bg: s.getPropertyValue("--bg").trim(),
+    cardAlt: s.getPropertyValue("--card-alt").trim(),
+    text: s.getPropertyValue("--text").trim(),
+    textMuted: s.getPropertyValue("--text-muted").trim(),
+    win: s.getPropertyValue("--win").trim(),
+    winBg: s.getPropertyValue("--win-bg").trim(),
+    loss: s.getPropertyValue("--loss").trim(),
+    lossBg: s.getPropertyValue("--loss-bg").trim(),
+    diag: s.getPropertyValue("--matrix-diag").trim(),
+    neutral: s.getPropertyValue("--matrix-neutral").trim(),
+    legacy: s.getPropertyValue("--matrix-legacy").trim(),
+    legacyBg: s.getPropertyValue("--matrix-legacy-bg").trim(),
+  };
+}
+
+function renderMatrixCanvas(container, films, { cellInfo, tooltip, onClick }) {
+  const n = films.length;
+  const w = MATRIX_HEADER + n * MATRIX_CELL;
+  const h = MATRIX_HEADER + n * MATRIX_CELL;
+  const dpr = window.devicePixelRatio || 1;
+
+  container.innerHTML = "";
+  const canvas = document.createElement("canvas");
+  canvas.className = "matrix-canvas";
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  container.appendChild(canvas);
+
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const C = getMatrixColors();
+
+  // Background
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, w, h);
+
+  // Corner label
+  ctx.fillStyle = C.textMuted;
+  ctx.font = MATRIX_FONT;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("\u2193 beat \u2192", MATRIX_HEADER / 2, MATRIX_HEADER / 2);
+
+  // Column headers (rotated)
+  ctx.save();
+  ctx.font = MATRIX_FONT;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = C.textMuted;
+  for (let i = 0; i < n; i++) {
+    const x = MATRIX_HEADER + i * MATRIX_CELL + MATRIX_CELL / 2;
+    ctx.save();
+    ctx.translate(x, MATRIX_HEADER - 3);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText(shortTitle(films[i].title), 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // Row headers
+  ctx.font = MATRIX_FONT;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = C.textMuted;
+  for (let i = 0; i < n; i++) {
+    const y = MATRIX_HEADER + i * MATRIX_CELL + MATRIX_CELL / 2;
+    ctx.fillText(shortTitle(films[i].title), MATRIX_HEADER - 4, y);
+  }
+
+  // Grid lines
+  ctx.strokeStyle = C.cardAlt;
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= n; i++) {
+    const pos = MATRIX_HEADER + i * MATRIX_CELL;
+    ctx.beginPath();
+    ctx.moveTo(MATRIX_HEADER, pos);
+    ctx.lineTo(w, pos);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(pos, MATRIX_HEADER);
+    ctx.lineTo(pos, h);
+    ctx.stroke();
+  }
+
+  // Cells
+  const bgMap = {
+    win: C.winBg,
+    loss: C.lossBg,
+    neutral: C.neutral,
+    legacy: C.legacyBg,
+    empty: null,
+    diag: C.diag,
+  };
+  const fgMap = {
+    win: C.win,
+    loss: C.loss,
+    neutral: C.textMuted,
+    legacy: C.legacy,
+    empty: C.text,
+  };
+
+  ctx.font = MATRIX_CELL_FONT;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (let ri = 0; ri < n; ri++) {
+    for (let ci = 0; ci < n; ci++) {
+      const x = MATRIX_HEADER + ci * MATRIX_CELL;
+      const y = MATRIX_HEADER + ri * MATRIX_CELL;
+      if (ri === ci) {
+        ctx.fillStyle = C.diag;
+        ctx.fillRect(x, y, MATRIX_CELL, MATRIX_CELL);
+        continue;
+      }
+      const info = cellInfo(ri, ci);
+      if (info.bg === "residual") {
+        const r = info.residual || 0;
+        // Diverging color: green = observed > model, red = observed < model
+        const t = Math.min(Math.abs(r) * 3, 1);
+        ctx.fillStyle =
+          r > 0
+            ? `rgba(39,174,96,${t * 0.6})`
+            : r < 0
+              ? `rgba(231,76,60,${t * 0.6})`
+              : C.neutral;
+        ctx.fillRect(x, y, MATRIX_CELL, MATRIX_CELL);
+      } else {
+        const bg = bgMap[info.bg];
+        if (bg) {
+          ctx.fillStyle = bg;
+          ctx.fillRect(x, y, MATRIX_CELL, MATRIX_CELL);
+        }
+      }
+      if (info.text) {
+        ctx.fillStyle =
+          info.bg === "residual" ? C.text : fgMap[info.bg] || C.text;
+        ctx.fillText(info.text, x + MATRIX_CELL / 2, y + MATRIX_CELL / 2);
+      }
+    }
+  }
+
+  // Hover / click handling
+  let hoverRI = -1,
+    hoverCI = -1;
+  const tip = getMatrixTooltip();
+
+  function cellAt(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const ci = Math.floor((mx - MATRIX_HEADER) / MATRIX_CELL);
+    const ci2 = Math.floor((my - MATRIX_HEADER) / MATRIX_CELL);
+    if (ci >= 0 && ci < n && ci2 >= 0 && ci2 < n && ci !== ci2)
+      return [ci2, ci];
+    return null;
+  }
+
+  canvas.addEventListener("mousemove", (e) => {
+    const cell = cellAt(e);
+    if (!cell) {
+      tip.style.display = "none";
+      canvas.style.cursor = "default";
+      hoverRI = hoverCI = -1;
+      return;
+    }
+    const [ri, ci] = cell;
+    if (ri !== hoverRI || ci !== hoverCI) {
+      hoverRI = ri;
+      hoverCI = ci;
+      tip.textContent = tooltip(ri, ci);
+      canvas.style.cursor = onClick ? "pointer" : "default";
+    }
+    tip.style.display = "";
+    tip.style.left = e.pageX + 12 + "px";
+    tip.style.top = e.pageY + 12 + "px";
+  });
+
+  canvas.addEventListener("mouseleave", () => {
+    tip.style.display = "none";
+    hoverRI = hoverCI = -1;
+  });
+
+  if (onClick) {
+    canvas.addEventListener("click", (e) => {
+      const cell = cellAt(e);
+      if (cell) onClick(cell[0], cell[1]);
+    });
+  }
 }
 
 // -- Toasts --

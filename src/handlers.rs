@@ -380,8 +380,11 @@ pub async fn global_matrix(data: web::Data<AppState>) -> HttpResponse {
 
     let films: Vec<serde_json::Value> = film_ids
         .iter()
-        .filter_map(|&id| data.films.get(&id))
-        .map(|f| serde_json::json!({"id": f.id, "title": f.title}))
+        .filter_map(|&id| {
+            let film = data.films.get(&id)?;
+            let score = ratings.get(&id).map(|r| r.score).unwrap_or(1.0);
+            Some(serde_json::json!({"id": film.id, "title": film.title, "score": score}))
+        })
         .collect();
 
     let mut wins: Vec<serde_json::Value> = Vec::new();
