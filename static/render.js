@@ -556,7 +556,7 @@ function renderMore(state, prev) {
             bj = scoreMap.get(col.id);
           const predicted = bi / (bi + bj);
           const residual = observed - predicted;
-          return `${row.title} vs ${col.title}: observed ${(observed * 100).toFixed(0)}% / model ${(predicted * 100).toFixed(0)}% (${residual > 0 ? "+" : ""}${(residual * 100).toFixed(0)}%)`;
+          return `${row.title} vs ${col.title}\nobserved ${(observed * 100).toFixed(0)}% / model ${(predicted * 100).toFixed(0)}% (${residual > 0 ? "+" : ""}${(residual * 100).toFixed(0)}%)`;
         },
         onClick: null,
       });
@@ -651,7 +651,13 @@ function renderMatrixCanvas(container, films, { cellInfo, tooltip, onClick }) {
   const n = films.length;
   const w = MATRIX_HEADER + n * MATRIX_CELL;
   const h = MATRIX_HEADER + n * MATRIX_CELL;
-  const dpr = window.devicePixelRatio || 1;
+  // iOS Safari caps canvas area at ~16.7M pixels; reduce DPR if needed
+  const maxCanvasArea = 16777216;
+  let dpr = window.devicePixelRatio || 1;
+  if (w * dpr * h * dpr > maxCanvasArea) {
+    dpr = Math.floor(Math.sqrt(maxCanvasArea / (w * h)));
+    if (dpr < 1) dpr = 1;
+  }
 
   container.innerHTML = "";
   const canvas = document.createElement("canvas");
@@ -811,8 +817,8 @@ function renderMatrixCanvas(container, films, { cellInfo, tooltip, onClick }) {
       canvas.style.cursor = onClick ? "pointer" : "default";
     }
     tip.style.display = "";
-    tip.style.left = e.pageX + 12 + "px";
-    tip.style.top = e.pageY + 12 + "px";
+    tip.style.left = e.clientX + 12 + "px";
+    tip.style.top = e.clientY + 12 + "px";
   });
 
   canvas.addEventListener("mouseleave", () => {
