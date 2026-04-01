@@ -119,9 +119,7 @@ function initVoteStream() {
     loadBoard();
     if (page === "more") loadMore();
     if (data.user_id === USER_ID) return;
-    addToast(
-      `Someone voted: <strong>${esc(data.winner_title)}</strong> over ${esc(data.loser_title)}`,
-    );
+    addToast(esc(data.message));
   };
   es.onerror = () => {
     es.close();

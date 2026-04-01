@@ -97,6 +97,13 @@ impl AppState {
 
     /// Force the vote floor to the current in-memory count, so save() won't
     /// refuse after a legitimate vote deletion.
+    pub fn broadcast(&self, user_id: &str, message: String) {
+        let _ = self.vote_tx.send(VoteEvent {
+            user_id: user_id.to_string(),
+            message,
+        });
+    }
+
     pub fn sync_vote_floor(&self) {
         let users = self.users.lock().unwrap();
         let current = count_votes(&users);

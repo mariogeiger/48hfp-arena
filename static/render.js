@@ -536,7 +536,7 @@ function renderMore(state, prev) {
           const wRC = winMap.get(`${row.id},${col.id}`) || 0;
           const wCR = winMap.get(`${col.id},${row.id}`) || 0;
           const total = wRC + wCR;
-          if (total === 0) return { bg: "empty", text: "", residual: 0 };
+          if (total === 0) return { bg: "empty", text: "" };
           const observed = wRC / total;
           const bi = scoreMap.get(row.id),
             bj = scoreMap.get(col.id);
@@ -739,7 +739,17 @@ function renderMatrixCanvas(container, films, { cellInfo, tooltip, onClick }) {
     neutral: C.textMuted,
     legacy: C.legacy,
     empty: C.text,
+    residual: C.text,
   };
+
+  function residualColor(r) {
+    const t = Math.min(Math.abs(r) * 3, 1);
+    return r > 0
+      ? `rgba(39,174,96,${t * 0.6})`
+      : r < 0
+        ? `rgba(231,76,60,${t * 0.6})`
+        : C.neutral;
+  }
 
   ctx.font = MATRIX_CELL_FONT;
   ctx.textAlign = "center";
@@ -754,26 +764,16 @@ function renderMatrixCanvas(container, films, { cellInfo, tooltip, onClick }) {
         continue;
       }
       const info = cellInfo(ri, ci);
-      if (info.bg === "residual") {
-        const r = info.residual || 0;
-        const t = Math.min(Math.abs(r) * 3, 1);
-        ctx.fillStyle =
-          r > 0
-            ? `rgba(39,174,96,${t * 0.6})`
-            : r < 0
-              ? `rgba(231,76,60,${t * 0.6})`
-              : C.neutral;
+      const bg =
+        info.bg === "residual"
+          ? residualColor(info.residual || 0)
+          : bgMap[info.bg];
+      if (bg) {
+        ctx.fillStyle = bg;
         ctx.fillRect(x, y, MATRIX_CELL, MATRIX_CELL);
-      } else {
-        const bg = bgMap[info.bg];
-        if (bg) {
-          ctx.fillStyle = bg;
-          ctx.fillRect(x, y, MATRIX_CELL, MATRIX_CELL);
-        }
       }
       if (info.text) {
-        ctx.fillStyle =
-          info.bg === "residual" ? C.text : fgMap[info.bg] || C.text;
+        ctx.fillStyle = fgMap[info.bg] || C.text;
         ctx.fillText(info.text, x + MATRIX_CELL / 2, y + MATRIX_CELL / 2);
       }
     }

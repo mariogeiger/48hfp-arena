@@ -175,21 +175,17 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
 
     data.save();
 
-    let winner_title = data
+    let winner = data
         .films
         .get(&payload.winner_id)
-        .map(|f| f.title.clone())
-        .unwrap_or_default();
-    let loser_title = data
+        .map(|f| f.title.as_str())
+        .unwrap_or("?");
+    let loser = data
         .films
         .get(&payload.loser_id)
-        .map(|f| f.title.clone())
-        .unwrap_or_default();
-    let _ = data.vote_tx.send(VoteEvent {
-        user_id: payload.user_id.clone(),
-        winner_title,
-        loser_title,
-    });
+        .map(|f| f.title.as_str())
+        .unwrap_or("?");
+    data.broadcast(&payload.user_id, format!("Voted: {winner} over {loser}"));
 
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
@@ -231,6 +227,19 @@ pub async fn unvote(data: web::Data<AppState>, payload: web::Json<UnvotePayload>
     }
 
     data.save();
+
+    let winner = data
+        .films
+        .get(&payload.winner_id)
+        .map(|f| f.title.as_str())
+        .unwrap_or("?");
+    let loser = data
+        .films
+        .get(&payload.loser_id)
+        .map(|f| f.title.as_str())
+        .unwrap_or("?");
+    data.broadcast(&payload.user_id, format!("Unvoted: {winner} vs {loser}"));
+
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
@@ -257,6 +266,7 @@ pub async fn reset_votes(
 
     data.sync_vote_floor();
     data.save();
+    data.broadcast(&payload.user_id, "Reset all votes".into());
 
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }

@@ -29,8 +29,7 @@ pub struct PersistentData {
 #[derive(Debug, Clone, Serialize)]
 pub struct VoteEvent {
     pub user_id: String,
-    pub winner_title: String,
-    pub loser_title: String,
+    pub message: String,
 }
 
 #[derive(Deserialize)]
