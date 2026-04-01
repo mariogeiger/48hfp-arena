@@ -485,8 +485,8 @@ pub async fn user_contributions(
             serde_json::json!({
                 "user_id": uid,
                 "is_you": *uid == query.user_id,
-                "films_selected": films_voted.len(),
                 "votes": state.compared_pairs.len(),
+                "films_voted": films_voted.len(),
             })
         })
         .collect();
@@ -494,11 +494,7 @@ pub async fn user_contributions(
     entries.sort_by(|a, b| {
         let va = a["votes"].as_u64().unwrap_or(0);
         let vb = b["votes"].as_u64().unwrap_or(0);
-        vb.cmp(&va).then_with(|| {
-            let fa = a["films_selected"].as_u64().unwrap_or(0);
-            let fb = b["films_selected"].as_u64().unwrap_or(0);
-            fb.cmp(&fa)
-        })
+        vb.cmp(&va)
     });
 
     for (i, entry) in entries.iter_mut().enumerate() {
