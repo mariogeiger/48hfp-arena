@@ -2,6 +2,7 @@ mod api;
 mod components;
 mod pages;
 mod state;
+mod timeout;
 
 use leptos::prelude::*;
 use state::{AppState, Page};
@@ -10,7 +11,6 @@ use wasm_bindgen::JsCast;
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub fn main() {
     console_error_panic_hook::set_once();
-    let _ = console_log::init_with_level(log::Level::Debug);
     leptos::mount::mount_to_body(App);
 }
 

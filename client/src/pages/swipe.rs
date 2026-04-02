@@ -44,7 +44,7 @@ fn animate_cards_out(
         let _ = b.style().set_property("opacity", opacity.1);
     }
     let animating2 = animating.clone();
-    gloo_timers::callback::Timeout::new(duration_ms, move || {
+    crate::timeout::Timeout::new(duration_ms, move || {
         animating2.set(false);
         after();
     })
@@ -142,7 +142,7 @@ pub fn setup_swipe_controller(state: &AppState) -> SwipeController {
                 let _ = b.style().set_property("opacity", "0");
             }
             let animating2 = animating_ref.clone();
-            gloo_timers::callback::Timeout::new(350, move || {
+            crate::timeout::Timeout::new(350, move || {
                 animating2.set(false);
                 wasm_bindgen_futures::spawn_local(async move {
                     api::cast_vote(&s, w_id, l_id).await;

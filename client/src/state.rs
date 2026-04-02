@@ -156,7 +156,7 @@ impl AppState {
             .ok()
             .flatten()
             .unwrap_or_else(|| {
-                let id = uuid::Uuid::new_v4().to_string();
+                let id = gen_uuid_v4();
                 storage.set_item("filmrank_uid", &id).unwrap();
                 id
             });
@@ -202,7 +202,7 @@ impl AppState {
             })
         });
         let toasts = self.toasts;
-        gloo_timers::callback::Timeout::new(4_000, move || {
+        crate::timeout::Timeout::new(4_000, move || {
             toasts.update(|t| t.retain(|toast| toast.id != id));
         })
         .forget();
@@ -235,4 +235,37 @@ impl AppState {
             }
         });
     }
+}
+
+fn gen_uuid_v4() -> String {
+    let mut buf = [0u8; 16];
+    let array = js_sys::Uint8Array::new_with_length(16);
+    web_sys::window()
+        .unwrap()
+        .crypto()
+        .unwrap()
+        .get_random_values_with_u8_array(&mut buf)
+        .unwrap();
+    array.copy_from(&buf);
+    buf[6] = (buf[6] & 0x0f) | 0x40; // version 4
+    buf[8] = (buf[8] & 0x3f) | 0x80; // variant 1
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        buf[0],
+        buf[1],
+        buf[2],
+        buf[3],
+        buf[4],
+        buf[5],
+        buf[6],
+        buf[7],
+        buf[8],
+        buf[9],
+        buf[10],
+        buf[11],
+        buf[12],
+        buf[13],
+        buf[14],
+        buf[15],
+    )
 }

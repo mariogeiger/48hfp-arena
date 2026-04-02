@@ -1,33 +1,56 @@
 use crate::state::*;
-use gloo_net::http::Request;
 use leptos::prelude::*;
 use std::collections::HashMap;
+use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
 
-async fn api_get(url: &str) -> Result<serde_json::Value, String> {
-    let resp = Request::get(url).send().await.map_err(|e| e.to_string())?;
-    if resp.status() == 403
+async fn fetch_json(
+    url: &str,
+    opts: &web_sys::RequestInit,
+) -> Result<(u16, serde_json::Value), String> {
+    let window = web_sys::window().unwrap();
+    let resp: web_sys::Response = JsFuture::from(window.fetch_with_str_and_init(url, opts))
+        .await
+        .map_err(|e| format!("{e:?}"))?
+        .dyn_into()
+        .map_err(|e| format!("{e:?}"))?;
+    let status = resp.status();
+    let text = JsFuture::from(resp.text().map_err(|e| format!("{e:?}"))?)
+        .await
+        .map_err(|e| format!("{e:?}"))?
+        .as_string()
+        .unwrap_or_default();
+    let json = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    Ok((status, json))
+}
+
+fn check_banned(status: u16) {
+    if status == 403
         && let Some(state) = leptos::prelude::use_context::<AppState>()
     {
         state.banned.set(true);
     }
-    resp.json().await.map_err(|e| e.to_string())
+}
+
+async fn api_get(url: &str) -> Result<serde_json::Value, String> {
+    let opts = web_sys::RequestInit::new();
+    opts.set_method("GET");
+    let (status, json) = fetch_json(url, &opts).await?;
+    check_banned(status);
+    Ok(json)
 }
 
 async fn api_post(url: &str, body: &serde_json::Value) -> Result<serde_json::Value, String> {
-    let resp = Request::post(url)
-        .header("Content-Type", "application/json")
-        .body(serde_json::to_string(body).unwrap())
-        .map_err(|e| e.to_string())?
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if resp.status() == 403
-        && let Some(state) = leptos::prelude::use_context::<AppState>()
-    {
-        state.banned.set(true);
-    }
-    resp.json().await.map_err(|e| e.to_string())
+    let opts = web_sys::RequestInit::new();
+    opts.set_method("POST");
+    let headers = web_sys::Headers::new().unwrap();
+    headers.set("Content-Type", "application/json").unwrap();
+    opts.set_headers(&headers);
+    opts.set_body(&JsValue::from_str(&serde_json::to_string(body).unwrap()));
+    let (status, json) = fetch_json(url, &opts).await?;
+    check_banned(status);
+    Ok(json)
 }
 
 pub async fn boot(state: &AppState) {
@@ -312,7 +335,7 @@ pub fn init_vote_stream(state: &AppState) {
     let onerror = Closure::<dyn Fn()>::new(move || {
         es_clone.close();
         let s = state.clone();
-        gloo_timers::callback::Timeout::new(5_000, move || {
+        crate::timeout::Timeout::new(5_000, move || {
             init_vote_stream(&s);
         })
         .forget();
