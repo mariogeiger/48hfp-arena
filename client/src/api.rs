@@ -308,9 +308,14 @@ pub fn init_vote_stream(state: &AppState) {
     es.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
     onmessage.forget();
 
+    let es_clone = es.clone();
     let onerror = Closure::<dyn Fn()>::new(move || {
-        // Will auto-reconnect via EventSource default behavior
-        // but we close + re-init after a delay for robustness
+        es_clone.close();
+        let s = state.clone();
+        gloo_timers::callback::Timeout::new(5_000, move || {
+            init_vote_stream(&s);
+        })
+        .forget();
     });
     es.set_onerror(Some(onerror.as_ref().unchecked_ref()));
     onerror.forget();

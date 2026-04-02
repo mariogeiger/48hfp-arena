@@ -8,15 +8,20 @@ pub fn SelectPage() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
 
     let state_ds = state.clone();
+    let pending_save: StoredValue<
+        Option<send_wrapper::SendWrapper<gloo_timers::callback::Timeout>>,
+    > = StoredValue::new(None);
     let debounce_save = move || {
+        // Cancel any pending save before scheduling a new one
+        pending_save.set_value(None); // dropping the old Timeout cancels it
         let s = state_ds.clone();
-        // Simple delayed save — in WASM single-threaded context
-        gloo_timers::callback::Timeout::new(500, move || {
-            wasm_bindgen_futures::spawn_local(async move {
-                api::save_selection(&s).await;
-            });
-        })
-        .forget();
+        pending_save.set_value(Some(send_wrapper::SendWrapper::new(
+            gloo_timers::callback::Timeout::new(500, move || {
+                wasm_bindgen_futures::spawn_local(async move {
+                    api::save_selection(&s).await;
+                });
+            }),
+        )));
     };
 
     let visible_films = Memo::new(move |_| {
