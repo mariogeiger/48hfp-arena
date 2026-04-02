@@ -114,6 +114,8 @@ body {
   flex-shrink: 0;
   width: var(--pw);
   height: var(--ph);
+  -webkit-user-drag: none;
+  user-drag: none;
 }
 .poster-ph {
   width: var(--pw);
@@ -326,7 +328,7 @@ body.swipe-active {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* Focus film picker */
@@ -373,6 +375,11 @@ body.swipe-active {
   touch-action: pan-y;
   user-select: none;
   padding: 4px 0;
+}
+.swipe-arena img {
+  -webkit-user-drag: none;
+  user-drag: none;
+  pointer-events: none;
 }
 .vs-badge {
   font-size: 11px;

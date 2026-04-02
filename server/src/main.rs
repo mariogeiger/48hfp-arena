@@ -11,14 +11,14 @@ use std::net::TcpListener;
 use std::os::unix::io::FromRawFd;
 use tokio::sync::broadcast;
 
-use models::VoteEvent;
+use filmrank_shared::{Film, VoteEvent};
 use persistence::{AppState, load_db};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
     let csv_content = std::fs::read_to_string("data.csv").expect("Cannot read data.csv");
-    let films: HashMap<usize, models::Film> = csv::parse_csv(&csv_content)
+    let films: HashMap<usize, Film> = csv::parse_csv(&csv_content)
         .into_iter()
         .map(|f| (f.id, f))
         .collect();
@@ -63,7 +63,7 @@ async fn main() -> std::io::Result<()> {
             )
             .route("/api/user-matrix", web::get().to(handlers::user_matrix))
             .route("/api/global-matrix", web::get().to(handlers::global_matrix))
-            .service(Files::new("/", "./static").index_file("index.html"))
+            .service(Files::new("/", "./client/dist").index_file("index.html"))
     })
     .shutdown_timeout(1);
 

@@ -1,4 +1,4 @@
-use crate::models::Film;
+use filmrank_shared::Film;
 
 pub fn parse_csv(content: &str) -> Vec<Film> {
     content

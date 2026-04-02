@@ -29,18 +29,6 @@ impl BtRating {
 }
 
 /// Run the Bradley-Terry MM algorithm to convergence.
-///
-/// The model assigns each film a strength β_i > 0 such that
-///   P(i beats j) = β_i / (β_i + β_j).
-///
-/// The MM update is:
-///   β_i ← W_i / Σ_{j≠i} n_ij / (β_i + β_j)
-/// where W_i = total wins and n_ij = total comparisons between i and j.
-///
-/// After each iteration the strengths are normalized so the geometric mean
-/// of active films equals 1, which anchors the scale.
-///
-/// Films with zero wins keep a near-zero score (they sit below all ranked films).
 pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
     let active_ids: Vec<usize> = ratings
         .values()
@@ -52,7 +40,6 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
         return;
     }
 
-    // Films with 0 wins cannot be estimated by MLE (β → 0); pin them to a small floor.
     for &id in &active_ids {
         if ratings[&id].wins() == 0 {
             ratings.get_mut(&id).unwrap().score = 1e-6;
@@ -69,7 +56,6 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
         return;
     }
 
-    // Map film_id → index into old_scores; allocated once, reused each iteration.
     let idx: HashMap<usize, usize> = active_ids
         .iter()
         .enumerate()
@@ -78,7 +64,6 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
     let mut old_scores: Vec<f64> = active_ids.iter().map(|&id| ratings[&id].score).collect();
 
     for _ in 0..500 {
-        // Snapshot scores at the start of this iteration.
         for (pos, &id) in active_ids.iter().enumerate() {
             old_scores[pos] = ratings[&id].score;
         }
@@ -132,16 +117,6 @@ pub fn bt_score_to_display(score: f64) -> f64 {
 }
 
 /// Compute D-optimal Fisher Information scores for candidate pairs.
-///
-/// For the Bradley-Terry model P(i>j) = β_i/(β_i+β_j) parameterized by
-/// θ_i = ln(β_i), the Fisher Information from one comparison (i,j) is a
-/// rank-1 update: p_ij*(1-p_ij) * v*v^T where v = e_i - e_j.
-///
-/// The D-optimal criterion selects the pair maximizing:
-///   p_ij*(1-p_ij) * v^T F^{-1} v
-///
-/// This accounts for both match closeness (p near 0.5 → high info) and
-/// global uncertainty (films with few comparisons → large F^{-1} entries).
 pub fn fisher_pair_scores(
     ratings: &HashMap<usize, BtRating>,
     film_ids: &[usize],
@@ -158,9 +133,6 @@ pub fn fisher_pair_scores(
         .map(|(i, &id)| (id, i))
         .collect();
 
-    // Build n×n Fisher Information matrix with prior regularization.
-    // The prior makes F positive definite directly — no need to drop a
-    // reference film, which would create special cases in the scoring.
     let mut fisher = vec![0.0f64; n * n];
 
     for i in 0..n {
@@ -200,7 +172,6 @@ pub fn fisher_pair_scores(
 
     let finv = invert_matrix(&fisher, n);
 
-    // D-optimal score: p*(1-p) * v^T F^{-1} v — uniform for all pairs.
     candidates
         .iter()
         .map(|&(a, b)| {
@@ -216,7 +187,6 @@ pub fn fisher_pair_scores(
         .collect()
 }
 
-/// Invert an n×n matrix using Gauss-Jordan elimination with partial pivoting.
 fn invert_matrix(mat: &[f64], n: usize) -> Vec<f64> {
     let w = 2 * n;
     let mut aug = vec![0.0f64; n * w];

@@ -1,6 +1,7 @@
 use crate::bt::{BtRating, bt_score_to_display, fisher_pair_scores, run_bradley_terry};
-use crate::models::*;
+use crate::models::UserState;
 use crate::persistence::AppState;
+use filmrank_shared::*;
 
 use actix_web::{HttpResponse, web};
 use rand::distributions::WeightedIndex;

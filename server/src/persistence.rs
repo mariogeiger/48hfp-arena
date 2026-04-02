@@ -1,5 +1,6 @@
 use crate::bt::{BtRating, run_bradley_terry};
-use crate::models::{Film, PersistentData, UserState, VoteEvent, parse_pair_key};
+use crate::models::{PersistentData, UserState};
+use filmrank_shared::{Film, VoteEvent, parse_pair_key};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -156,7 +157,6 @@ fn count_votes(users: &HashMap<String, UserState>) -> usize {
 fn backup_db() {
     use std::time::SystemTime;
 
-    // Only backup if db.json exists and is non-empty
     let _metadata = match std::fs::metadata(DB_PATH) {
         Ok(m) if m.len() > 0 => m,
         _ => return,
@@ -164,7 +164,6 @@ fn backup_db() {
 
     let _ = std::fs::create_dir_all(BACKUP_DIR);
 
-    // Hourly backup: db_20260329_14.json (one per hour)
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -178,7 +177,6 @@ fn backup_db() {
         BACKUP_DIR, year, month, day, hour
     );
 
-    // Skip if this hour's backup already exists
     if std::path::Path::new(&backup_name).exists() {
         return;
     }
@@ -188,7 +186,6 @@ fn backup_db() {
         return;
     }
 
-    // Prune old backups, keep most recent MAX_BACKUPS
     if let Ok(entries) = std::fs::read_dir(BACKUP_DIR) {
         let mut backups: Vec<_> = entries
             .filter_map(|e| e.ok())
@@ -209,7 +206,6 @@ fn backup_db() {
 }
 
 fn unix_days_to_date(days: i64) -> (i64, u32, u32) {
-    // Algorithm from https://howardhinnant.github.io/date_algorithms.html
     let z = days + 719468;
     let era = if z >= 0 { z } else { z - 146096 } / 146097;
     let doe = (z - era * 146097) as u32;
@@ -223,7 +219,6 @@ fn unix_days_to_date(days: i64) -> (i64, u32, u32) {
     (y, m, d)
 }
 
-/// Count "compared_pairs" in a raw JSON value (works even if schema changed).
 fn count_votes_in_raw_json(content: &str) -> usize {
     let Ok(raw) = serde_json::from_str::<serde_json::Value>(content) else {
         return 0;
@@ -238,9 +233,6 @@ fn count_votes_in_raw_json(content: &str) -> usize {
         .sum()
 }
 
-/// Returns (ratings, users, votes_on_disk).
-/// `votes_on_disk` is the vote count from the file on disk — even if the schema
-/// didn't parse, we extract it from raw JSON so the safety floor is set.
 pub fn load_db(
     films: &HashMap<usize, Film>,
 ) -> (HashMap<usize, BtRating>, HashMap<String, UserState>, usize) {
@@ -250,7 +242,6 @@ pub fn load_db(
             (HashMap::new(), HashMap::new(), 0)
         }
         Ok(content) => {
-            // Always count votes from raw JSON first — this works regardless of schema
             let raw_votes = count_votes_in_raw_json(&content);
 
             match serde_json::from_str::<PersistentData>(&content) {
@@ -266,7 +257,6 @@ pub fn load_db(
                     (data.bt_ratings, data.users, votes)
                 }
                 Err(e) => {
-                    // Schema mismatch or corruption — save the old file so data isn't lost
                     let rescue_path =
                         format!("{}/db_rescue_{}.json", BACKUP_DIR, std::process::id());
                     let _ = std::fs::create_dir_all(BACKUP_DIR);
@@ -289,7 +279,6 @@ pub fn load_db(
     (ratings, users, votes_on_disk)
 }
 
-/// Read banned user IDs from banned.txt (one UUID per line, # comments allowed).
 pub fn load_banned() -> HashSet<String> {
     let content = match std::fs::read_to_string(BANNED_PATH) {
         Ok(c) => c,
