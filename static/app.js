@@ -127,6 +127,14 @@ function initVoteStream() {
   };
 }
 
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    const page = store.get().page;
+    if (page === "board") loadBoard();
+    if (page === "more") loadMore();
+  }
+});
+
 // ==================== BOOT ====================
 
 store.subscribe(render);
