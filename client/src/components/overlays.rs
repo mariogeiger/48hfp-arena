@@ -1,8 +1,9 @@
-use crate::state::AppState;
+use crate::state::{AppState, SiteConfig};
 use leptos::prelude::*;
 
 #[component]
 pub fn WelcomeOverlay() -> impl IntoView {
+    let welcome_text = SiteConfig::get().welcome_text;
     let promised = web_sys::window()
         .unwrap()
         .local_storage()
@@ -24,7 +25,7 @@ pub fn WelcomeOverlay() -> impl IntoView {
             <div class="welcome-bubble">
                 <h2>"Welcome!"</h2>
                 <p>
-                    "Please only vote on pairs of films you have actually watched. Your honest comparisons make the ranking meaningful for everyone."
+                    {welcome_text}
                 </p>
                 <div class="welcome-buttons">
                     <button

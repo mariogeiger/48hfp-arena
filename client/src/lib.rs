@@ -11,7 +11,18 @@ use wasm_bindgen::JsCast;
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub fn main() {
     console_error_panic_hook::set_once();
-    leptos::mount::mount_to_body(App);
+    // Fetch per-site config first, then mount with it in context. Config never
+    // changes at runtime, so a plain value in context beats a signal.
+    wasm_bindgen_futures::spawn_local(async {
+        let config = api::fetch_config().await;
+        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+            doc.set_title(&config.display_name);
+        }
+        leptos::mount::mount_to_body(move || {
+            provide_context(config.clone());
+            view! { <App /> }
+        });
+    });
 }
 
 #[component]

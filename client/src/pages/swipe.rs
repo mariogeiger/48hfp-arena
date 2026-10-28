@@ -1,6 +1,6 @@
 use crate::api;
 use crate::components::poster::Poster;
-use crate::state::{AppState, Page, PairDoneReason};
+use crate::state::{AppState, Page, PairDoneReason, SiteConfig, capitalize};
 use leptos::prelude::*;
 use send_wrapper::SendWrapper;
 use std::cell::{Cell, RefCell};
@@ -366,6 +366,13 @@ pub fn setup_swipe_controller(state: &AppState) -> SwipeController {
 #[component]
 pub fn SwipePage() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
+    let cfg = SiteConfig::get();
+    let has_image = cfg.has_image;
+    let require_selection = cfg.require_selection;
+    let duel_question = cfg.duel_question.clone();
+    let unknown_label = cfg.unknown_label.clone();
+    let noun = cfg.noun.clone();
+    let noun_plural = cfg.noun_plural.clone();
 
     // Set up gesture controller once, wrapped in SendWrapper for Leptos reactivity
     let ctrl = SendWrapper::new(Rc::new(RefCell::new(None::<SwipeController>)));
@@ -414,9 +421,12 @@ pub fn SwipePage() -> impl IntoView {
         }
     });
 
-    // Focus picker
+    // Focus picker — all items when there is no selection step, else the picks.
     let selected_films = Memo::new(move |_| {
         let films = state.films.get();
+        if !require_selection {
+            return films;
+        }
         let selected = state.selected_ids.get();
         films
             .into_iter()
@@ -437,21 +447,21 @@ pub fn SwipePage() -> impl IntoView {
 
                     if let Some(reason) = pair_status {
                         let vote_count = state.vote_count.get();
-                        let (heading, msg, action_label) = match reason {
+                        let (heading, msg, action_label): (String, String, String) = match reason {
                             PairDoneReason::NotEnough => (
-                                "Select films first",
-                                "Go back and pick at least 2 films you've watched.".to_string(),
-                                "Select Films",
+                                format!("Select {} first", noun_plural),
+                                format!("Go back and pick at least 2 {} you know.", noun_plural),
+                                format!("Select {}", capitalize(&noun_plural)),
                             ),
                             PairDoneReason::FocusDone => (
-                                "All done!",
-                                "You've compared this film against all others.".to_string(),
-                                "Compare All",
+                                "All done!".to_string(),
+                                format!("You've compared this {} against all others.", noun),
+                                "Compare All".to_string(),
                             ),
                             PairDoneReason::AllDone => (
-                                "All done!",
+                                "All done!".to_string(),
                                 format!("You've compared all possible pairs. ({} votes cast)", vote_count),
-                                "View Leaderboard",
+                                "View Leaderboard".to_string(),
                             ),
                         };
                         let state2 = state.clone();
@@ -499,8 +509,14 @@ pub fn SwipePage() -> impl IntoView {
                         let ctrl_undo = ctrl.clone();
                         let ctrl_skip = ctrl.clone();
 
+                        let duel_q = duel_question.clone();
+                        let show_duel = !duel_q.is_empty();
+                        let unknown_a = unknown_label.clone();
+                        let unknown_b = unknown_label.clone();
+
                         view! {
                             <div>
+                                {show_duel.then(|| view! { <div class="duel-question">{duel_q}</div> })}
                                 <div class="vs-badge">"VS"</div>
                                 <div class="swipe-arena" id="swipe-arena">
                                     <div
@@ -512,21 +528,23 @@ pub fn SwipePage() -> impl IntoView {
                                             if let Some(c) = ctrl_a2.borrow().as_ref() { c.pick_left(); }
                                         }
                                     >
-                                        <Poster url=a_poster />
+                                        {has_image.then(|| view! { <Poster url=a_poster /> })}
                                         <div class="title">{a_title}</div>
                                         <div class="meta">{a_meta}</div>
-                                        <button
-                                            class="deselect-btn"
-                                            on:click=move |e| {
-                                                e.stop_propagation();
-                                                let s = state_da.clone();
-                                                wasm_bindgen_futures::spawn_local(async move {
-                                                    api::deselect_and_skip(&s, a_id).await;
-                                                });
-                                            }
-                                        >
-                                            "Haven't seen it"
-                                        </button>
+                                        {require_selection.then(|| view! {
+                                            <button
+                                                class="deselect-btn"
+                                                on:click=move |e| {
+                                                    e.stop_propagation();
+                                                    let s = state_da.clone();
+                                                    wasm_bindgen_futures::spawn_local(async move {
+                                                        api::deselect_and_skip(&s, a_id).await;
+                                                    });
+                                                }
+                                            >
+                                                {unknown_a}
+                                            </button>
+                                        })}
                                     </div>
                                     <div
                                         class="film-card"
@@ -537,21 +555,23 @@ pub fn SwipePage() -> impl IntoView {
                                             if let Some(c) = ctrl_b2.borrow().as_ref() { c.pick_right(); }
                                         }
                                     >
-                                        <Poster url=b_poster />
+                                        {has_image.then(|| view! { <Poster url=b_poster /> })}
                                         <div class="title">{b_title}</div>
                                         <div class="meta">{b_meta}</div>
-                                        <button
-                                            class="deselect-btn"
-                                            on:click=move |e| {
-                                                e.stop_propagation();
-                                                let s = state_db.clone();
-                                                wasm_bindgen_futures::spawn_local(async move {
-                                                    api::deselect_and_skip(&s, b_id).await;
-                                                });
-                                            }
-                                        >
-                                            "Haven't seen it"
-                                        </button>
+                                        {require_selection.then(|| view! {
+                                            <button
+                                                class="deselect-btn"
+                                                on:click=move |e| {
+                                                    e.stop_propagation();
+                                                    let s = state_db.clone();
+                                                    wasm_bindgen_futures::spawn_local(async move {
+                                                        api::deselect_and_skip(&s, b_id).await;
+                                                    });
+                                                }
+                                            >
+                                                {unknown_b}
+                                            </button>
+                                        })}
                                     </div>
                                 </div>
                                 <div class="swipe-buttons">
@@ -592,7 +612,7 @@ pub fn SwipePage() -> impl IntoView {
 }
 
 #[component]
-fn FocusPicker(films: Memo<Vec<filmrank_shared::Film>>) -> impl IntoView {
+fn FocusPicker(films: Memo<Vec<versus_shared::Film>>) -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
     let state2 = state.clone();
 

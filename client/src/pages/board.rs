@@ -1,6 +1,6 @@
 use crate::api;
 use crate::components::poster;
-use crate::state::AppState;
+use crate::state::{AppState, SiteConfig};
 use leptos::prelude::*;
 use std::collections::HashMap;
 use wasm_bindgen::JsCast;
@@ -9,6 +9,10 @@ use wasm_bindgen::prelude::*;
 #[component]
 pub fn BoardPage() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
+    let cfg = SiteConfig::get();
+    let has_image = cfg.has_image;
+    let link_label = cfg.link_label.clone();
+    let noun_plural = cfg.noun_plural.clone();
 
     // Render board imperatively for FLIP animation
     // Track both board data AND page — only render+animate when board page is active
@@ -44,9 +48,10 @@ pub fn BoardPage() -> impl IntoView {
 
             // Render new DOM
             if board.is_empty() {
-                list.set_inner_html(
-                    r#"<div class="board-empty"><h3>No votes yet</h3><p>Start comparing films to build the leaderboard!</p></div>"#,
-                );
+                list.set_inner_html(&format!(
+                    r#"<div class="board-empty"><h3>No votes yet</h3><p>Start comparing {} to build the leaderboard!</p></div>"#,
+                    noun_plural
+                ));
                 return;
             }
 
@@ -54,7 +59,11 @@ pub fn BoardPage() -> impl IntoView {
                 .iter()
                 .enumerate()
                 .map(|(i, item)| {
-                    let poster = poster::poster_html(&item.poster_url);
+                    let poster = if has_image {
+                        poster::poster_html(&item.poster_url)
+                    } else {
+                        String::new()
+                    };
                     let title = api::html_escape(&item.title);
                     let team = api::html_escape(&item.team);
                     let city = if item.city.is_empty() {
@@ -66,8 +75,9 @@ pub fn BoardPage() -> impl IntoView {
                         String::new()
                     } else {
                         format!(
-                            r#" &middot; <a href="{}" target="_blank" class="board-video">Watch</a>"#,
-                            api::html_escape(&item.video_url)
+                            r#" &middot; <a href="{}" target="_blank" class="board-video">{}</a>"#,
+                            api::html_escape(&item.video_url),
+                            api::html_escape(&link_label)
                         )
                     };
                     let rating = item.rating.round() as i64;

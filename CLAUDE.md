@@ -45,8 +45,14 @@ Vanilla **CSS** with CSS custom properties for theming, responsive design using 
 
 ## Deployment
 
-- **systemd** user-level services with socket activation
-- Watchdog timer for health checks and automatic restart on failure
+One `versus-server` binary and one `client/dist` serve every site. A site is a
+folder holding `site.toml`, `data.csv`, `db.json`, `backups/` and `banned.txt`;
+the server runs with that folder as its working directory and `SITE_CONFIG`
+naming its `site.toml`; every path in it is relative to that folder. On rtx-home the sites
+live in `~/server/versus/<name>/`, one systemd unit each, behind Caddy; see
+`~/server/server.md`.
+
+- **SSE keepalive:** `vote_stream` emits a `: keepalive` SSE comment every 20 s so Actix can detect dead clients via failed writes (otherwise idle SSE connections leak fds — caused a multi-day wedge on 2026-04-18).
 
 ## Code Quality
 

@@ -1,17 +1,42 @@
 use crate::bt::{BtRating, run_bradley_terry};
+use crate::config::SiteConfig;
 use crate::models::{PersistentData, UserState};
-use filmrank_shared::{Film, VoteEvent, parse_pair_key};
+use versus_shared::{Film, VoteEvent, parse_pair_key};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::broadcast;
 
-pub const DB_PATH: &str = "db.json";
-const DB_TMP_PATH: &str = "db.json.tmp";
-const BACKUP_DIR: &str = "backups";
 const MAX_BACKUPS: usize = 100;
-const BANNED_PATH: &str = "banned.txt";
+
+/// File paths resolved from the site config at startup. Set once in `main`
+/// before any load/save call, so the persistence helpers can stay free
+/// functions rather than threading the config through every call site.
+pub struct Storage {
+    pub db_path: String,
+    pub db_tmp_path: String,
+    pub backup_dir: String,
+    pub banned_path: String,
+}
+
+static STORAGE: OnceLock<Storage> = OnceLock::new();
+
+pub fn init_storage(cfg: &SiteConfig) {
+    let _ = STORAGE.set(Storage {
+        db_path: cfg.db_path.clone(),
+        db_tmp_path: format!("{}.tmp", cfg.db_path),
+        backup_dir: cfg.backup_dir.clone(),
+        banned_path: cfg.banned_path.clone(),
+    });
+}
+
+fn st() -> &'static Storage {
+    STORAGE
+        .get()
+        .expect("storage not initialized (call init_storage in main)")
+}
 
 pub struct AppState {
     pub films: HashMap<usize, Film>,
@@ -21,6 +46,11 @@ pub struct AppState {
     /// Vote count loaded from disk — save() refuses to write fewer votes than this.
     votes_on_disk: AtomicUsize,
     pub banned: Mutex<HashSet<String>>,
+    /// When false, every item is in play for everyone (no per-user selection).
+    pub require_selection: bool,
+    /// Leaderboard eligibility thresholds (see SiteConfig).
+    pub min_votes: u32,
+    pub min_voters: usize,
 }
 
 impl AppState {
@@ -30,6 +60,9 @@ impl AppState {
         users: HashMap<String, UserState>,
         vote_tx: broadcast::Sender<VoteEvent>,
         votes_on_disk: usize,
+        require_selection: bool,
+        min_votes: u32,
+        min_voters: usize,
     ) -> Self {
         Self {
             films,
@@ -38,6 +71,9 @@ impl AppState {
             vote_tx,
             votes_on_disk: AtomicUsize::new(votes_on_disk),
             banned: Mutex::new(HashSet::new()),
+            require_selection,
+            min_votes,
+            min_voters,
         }
     }
 
@@ -124,7 +160,9 @@ impl AppState {
             eprintln!(
                 "REFUSING TO SAVE: new data has {} votes but db on disk had {}. \
                  This looks like data loss. Backup exists in {}/",
-                new_votes, min_votes, BACKUP_DIR
+                new_votes,
+                min_votes,
+                st().backup_dir
             );
             return;
         }
@@ -134,14 +172,14 @@ impl AppState {
             backup_db();
 
             // Atomic write: write to tmp, fsync, then rename
-            if let Ok(file) = std::fs::File::create(DB_TMP_PATH) {
+            if let Ok(file) = std::fs::File::create(&st().db_tmp_path) {
                 use std::io::Write;
                 let mut writer = std::io::BufWriter::new(file);
                 if writer.write_all(json.as_bytes()).is_ok()
                     && writer.flush().is_ok()
                     && writer.get_ref().sync_all().is_ok()
                 {
-                    let _ = std::fs::rename(DB_TMP_PATH, DB_PATH);
+                    let _ = std::fs::rename(&st().db_tmp_path, &st().db_path);
                     // Update the floor to the new count
                     self.votes_on_disk.store(new_votes, Ordering::Relaxed);
                 }
@@ -157,12 +195,12 @@ fn count_votes(users: &HashMap<String, UserState>) -> usize {
 fn backup_db() {
     use std::time::SystemTime;
 
-    let _metadata = match std::fs::metadata(DB_PATH) {
+    let _metadata = match std::fs::metadata(&st().db_path) {
         Ok(m) if m.len() > 0 => m,
         _ => return,
     };
 
-    let _ = std::fs::create_dir_all(BACKUP_DIR);
+    let _ = std::fs::create_dir_all(&st().backup_dir);
 
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -174,19 +212,23 @@ fn backup_db() {
     let hour = secs_of_day / 3600;
     let backup_name = format!(
         "{}/db_{:04}{:02}{:02}_{:02}.json",
-        BACKUP_DIR, year, month, day, hour
+        st().backup_dir,
+        year,
+        month,
+        day,
+        hour
     );
 
     if std::path::Path::new(&backup_name).exists() {
         return;
     }
 
-    if let Err(e) = std::fs::copy(DB_PATH, &backup_name) {
+    if let Err(e) = std::fs::copy(&st().db_path, &backup_name) {
         eprintln!("Warning: failed to backup db: {}", e);
         return;
     }
 
-    if let Ok(entries) = std::fs::read_dir(BACKUP_DIR) {
+    if let Ok(entries) = std::fs::read_dir(&st().backup_dir) {
         let mut backups: Vec<_> = entries
             .filter_map(|e| e.ok())
             .filter(|e| {
@@ -236,7 +278,7 @@ fn count_votes_in_raw_json(content: &str) -> usize {
 pub fn load_db(
     films: &HashMap<usize, Film>,
 ) -> (HashMap<usize, BtRating>, HashMap<String, UserState>, usize) {
-    let (mut ratings, users, votes_on_disk) = match std::fs::read_to_string(DB_PATH) {
+    let (mut ratings, users, votes_on_disk) = match std::fs::read_to_string(&st().db_path) {
         Err(_) => {
             println!("No existing db found, starting fresh");
             (HashMap::new(), HashMap::new(), 0)
@@ -252,21 +294,21 @@ pub fn load_db(
                         data.bt_ratings.len(),
                         data.users.len(),
                         votes,
-                        DB_PATH
+                        st().db_path
                     );
                     (data.bt_ratings, data.users, votes)
                 }
                 Err(e) => {
                     let rescue_path =
-                        format!("{}/db_rescue_{}.json", BACKUP_DIR, std::process::id());
-                    let _ = std::fs::create_dir_all(BACKUP_DIR);
-                    eprintln!("ERROR: Failed to parse {}: {}", DB_PATH, e);
+                        format!("{}/db_rescue_{}.json", st().backup_dir, std::process::id());
+                    let _ = std::fs::create_dir_all(&st().backup_dir);
+                    eprintln!("ERROR: Failed to parse {}: {}", st().db_path, e);
                     eprintln!("Saving unreadable db to {} — starting fresh", rescue_path);
                     eprintln!(
                         "Old db had {} votes — save() will refuse to overwrite until that count is exceeded",
                         raw_votes
                     );
-                    let _ = std::fs::copy(DB_PATH, &rescue_path);
+                    let _ = std::fs::copy(&st().db_path, &rescue_path);
                     (HashMap::new(), HashMap::new(), raw_votes)
                 }
             }
@@ -280,7 +322,7 @@ pub fn load_db(
 }
 
 pub fn load_banned() -> HashSet<String> {
-    let content = match std::fs::read_to_string(BANNED_PATH) {
+    let content = match std::fs::read_to_string(&st().banned_path) {
         Ok(c) => c,
         Err(_) => return HashSet::new(),
     };

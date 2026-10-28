@@ -1,7 +1,7 @@
 use crate::bt::{BtRating, bt_score_to_display, fisher_pair_scores, run_bradley_terry};
 use crate::models::UserState;
 use crate::persistence::AppState;
-use filmrank_shared::*;
+use versus_shared::*;
 
 use actix_web::{HttpResponse, web};
 use rand::distributions::WeightedIndex;
@@ -23,6 +23,12 @@ pub async fn health(data: web::Data<AppState>) -> HttpResponse {
         HttpResponse::InternalServerError()
             .json(serde_json::json!({"status": "deadlocked", "ratings_lock": ratings_ok, "users_lock": users_ok}))
     }
+}
+
+/// Serves the site's client-facing configuration (branding, copy, column
+/// flags). Precomputed in `main` and stored as shared app data.
+pub async fn config(cfg: web::Data<serde_json::Value>) -> HttpResponse {
+    HttpResponse::Ok().json(cfg.get_ref())
 }
 
 pub async fn get_films(data: web::Data<AppState>) -> HttpResponse {
@@ -57,11 +63,20 @@ pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>)
         let user = users.entry(query.user_id.clone()).or_default();
         let votes = user.compared_pairs.len();
 
-        if user.seen_films.len() < 2 {
+        // When selection isn't required, every item is in play for everyone;
+        // otherwise use the user's own picked set.
+        let seen: Vec<usize> = if data.require_selection {
+            user.seen_films.clone()
+        } else {
+            let mut all: Vec<usize> = data.films.keys().copied().collect();
+            all.sort_unstable();
+            all
+        };
+
+        if seen.len() < 2 {
             return HttpResponse::Ok().json(serde_json::json!({"done": true, "votes": votes}));
         }
 
-        let seen = user.seen_films.clone();
         let focus = query.focus_film.filter(|f| seen.contains(f));
         let mut remaining = Vec::new();
         for i in 0..seen.len() {
@@ -275,16 +290,28 @@ pub async fn reset_votes(
 pub async fn vote_stream(data: web::Data<AppState>) -> HttpResponse {
     let mut rx = data.vote_tx.subscribe();
     let stream = async_stream::stream! {
+        // Periodic comment forces a write so Actix can detect dead clients
+        // and drop their fd; without it, idle SSE connections leak forever.
+        let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(20));
         loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    let json = serde_json::to_string(&event).unwrap();
+            tokio::select! {
+                _ = keepalive.tick() => {
                     yield Ok::<_, actix_web::Error>(
-                        actix_web::web::Bytes::from(format!("data: {}\n\n", json))
+                        actix_web::web::Bytes::from_static(b": keepalive\n\n")
                     );
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(_) => break,
+                res = rx.recv() => {
+                    match res {
+                        Ok(event) => {
+                            let json = serde_json::to_string(&event).unwrap();
+                            yield Ok::<_, actix_web::Error>(
+                                actix_web::web::Bytes::from(format!("data: {}\n\n", json))
+                            );
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(_) => break,
+                    }
+                }
             }
         }
     };
@@ -412,13 +439,12 @@ pub async fn global_matrix(data: web::Data<AppState>) -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({ "films": films, "wins": wins }))
 }
 
-const MIN_VOTES: u32 = 10;
-const MIN_VOTERS: usize = 2;
-
 fn ranked_films<'a>(
     ratings: &'a HashMap<usize, BtRating>,
     users: &HashMap<String, UserState>,
     banned: &HashSet<String>,
+    min_votes: u32,
+    min_voters: usize,
 ) -> Vec<&'a BtRating> {
     let mut voters_per_film: HashMap<usize, HashSet<&String>> = HashMap::new();
     for (user_id, state) in users.iter() {
@@ -436,8 +462,8 @@ fn ranked_films<'a>(
     let mut ranked: Vec<&BtRating> = ratings
         .values()
         .filter(|r| {
-            r.comparisons >= MIN_VOTES
-                && voters_per_film.get(&r.film_id).map_or(0, |s| s.len()) >= MIN_VOTERS
+            r.comparisons >= min_votes
+                && voters_per_film.get(&r.film_id).map_or(0, |s| s.len()) >= min_voters
         })
         .collect();
     ranked.sort_by(|a, b| {
@@ -453,7 +479,7 @@ pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
     let ratings = data.bt_ratings.lock().unwrap();
     let users = data.users.lock().unwrap();
     let banned = data.banned.lock().unwrap();
-    let ranked = ranked_films(&ratings, &users, &banned);
+    let ranked = ranked_films(&ratings, &users, &banned, data.min_votes, data.min_voters);
 
     let board: Vec<serde_json::Value> = ranked
         .iter()
@@ -527,7 +553,7 @@ pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
     let ratings = data.bt_ratings.lock().unwrap();
     let users = data.users.lock().unwrap();
     let banned = data.banned.lock().unwrap();
-    let ranked = ranked_films(&ratings, &users, &banned);
+    let ranked = ranked_films(&ratings, &users, &banned, data.min_votes, data.min_voters);
 
     let mut csv = String::from("Rank,Title,Team,City,Rating,Wins,Losses,Comparisons\n");
     for (i, r) in ranked.iter().enumerate() {

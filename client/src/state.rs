@@ -1,6 +1,78 @@
-use filmrank_shared::Film;
 use leptos::prelude::*;
 use std::collections::HashSet;
+use versus_shared::Film;
+
+/// Per-site configuration fetched once from `/api/config` before the app mounts
+/// and provided through Leptos context. It never changes at runtime, so it is
+/// stored as a plain value rather than a signal.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SiteConfig {
+    pub display_name: String,
+    #[serde(default)]
+    pub tagline: String,
+    #[serde(default)]
+    pub has_image: bool,
+    #[serde(default = "default_true")]
+    pub require_selection: bool,
+    #[serde(default)]
+    pub duel_question: String,
+    #[serde(default)]
+    pub noun: String,
+    #[serde(default)]
+    pub noun_plural: String,
+    #[serde(default)]
+    pub welcome_text: String,
+    #[serde(default)]
+    pub unknown_label: String,
+    #[serde(default)]
+    pub link_label: String,
+    #[serde(default)]
+    pub suggest_repo: String,
+    #[serde(default)]
+    pub source_url: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for SiteConfig {
+    fn default() -> Self {
+        // Film defaults, so the UI stays sensible even if /api/config fails.
+        Self {
+            display_name: "FilmRank".into(),
+            tagline: String::new(),
+            has_image: true,
+            require_selection: true,
+            duel_question: String::new(),
+            noun: "film".into(),
+            noun_plural: "films".into(),
+            welcome_text: "Please only vote on pairs you have real opinions about. \
+                           Your honest comparisons make the ranking meaningful for everyone."
+                .into(),
+            unknown_label: "Skip this one".into(),
+            link_label: "Open".into(),
+            suggest_repo: String::new(),
+            source_url: String::new(),
+        }
+    }
+}
+
+impl SiteConfig {
+    /// Read the config from Leptos context (falls back to defaults if missing).
+    pub fn get() -> Self {
+        use_context::<SiteConfig>().unwrap_or_default()
+    }
+}
+
+/// Capitalize the first character — for turning `noun_plural` into a heading.
+pub fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {

@@ -53,6 +53,18 @@ async fn api_post(url: &str, body: &serde_json::Value) -> Result<serde_json::Val
     Ok(json)
 }
 
+/// Fetch the per-site config before mount. Does not go through `api_get`
+/// (which touches Leptos context) since it runs before any reactive owner
+/// exists. Falls back to defaults on any error.
+pub async fn fetch_config() -> SiteConfig {
+    let opts = web_sys::RequestInit::new();
+    opts.set_method("GET");
+    match fetch_json("/api/config", &opts).await {
+        Ok((_, json)) => serde_json::from_value(json).unwrap_or_default(),
+        Err(_) => SiteConfig::default(),
+    }
+}
+
 pub async fn boot(state: &AppState) {
     let films_url = "/api/films";
     let board_url = "/api/leaderboard";
@@ -62,7 +74,7 @@ pub async fn boot(state: &AppState) {
     },);
 
     if let Ok(films_json) = films_res
-        && let Ok(mut films) = serde_json::from_value::<Vec<filmrank_shared::Film>>(films_json)
+        && let Ok(mut films) = serde_json::from_value::<Vec<versus_shared::Film>>(films_json)
     {
         if let Ok(board_json) = &board_res
             && let Ok(board) = serde_json::from_value::<Vec<LeaderboardEntry>>(board_json.clone())
@@ -78,10 +90,15 @@ pub async fn boot(state: &AppState) {
         state.films.set(films);
     }
 
-    // Save selection if user already has films selected
-    let selected = state.selected_ids.get_untracked();
-    if selected.len() >= 2 {
-        save_selection(state).await;
+    let require_selection = SiteConfig::get().require_selection;
+
+    // Save selection if user already has items selected (only meaningful when
+    // selection is required).
+    if require_selection {
+        let selected = state.selected_ids.get_untracked();
+        if selected.len() >= 2 {
+            save_selection(state).await;
+        }
     }
 
     // Navigate to initial page
@@ -93,7 +110,11 @@ pub async fn boot(state: &AppState) {
     let hash = hash.trim_start_matches('#');
     let selected_count = state.selected_ids.get_untracked().len();
 
-    if let Some(page) = Page::from_str(hash) {
+    if !require_selection {
+        // No select step — go straight to comparing (ignore any stale #select).
+        let page = Page::from_str(hash).filter(|p| *p != Page::Select);
+        state.navigate(page.unwrap_or(Page::Swipe));
+    } else if let Some(page) = Page::from_str(hash) {
         state.navigate(page);
     } else if selected_count == 0 {
         state.navigate(Page::Select);
@@ -145,8 +166,8 @@ pub async fn load_pair(state: &AppState) {
             .set(data.get("votes").and_then(|v| v.as_u64()).unwrap_or(0) as usize);
     } else if let (Some(a), Some(b)) = (data.get("a"), data.get("b"))
         && let (Ok(a), Ok(b)) = (
-            serde_json::from_value::<filmrank_shared::Film>(a.clone()),
-            serde_json::from_value::<filmrank_shared::Film>(b.clone()),
+            serde_json::from_value::<versus_shared::Film>(a.clone()),
+            serde_json::from_value::<versus_shared::Film>(b.clone()),
         )
     {
         state.pair.set(Some(FilmPair { a, b }));

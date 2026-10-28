@@ -1154,3 +1154,14 @@ body.swipe-active {
     columns: 4;
   }
 }
+
+/* Duel question shown above the VS badge on the compare page (config-driven) */
+.duel-question {
+    text-align: center;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 auto 0.5rem;
+    max-width: 92%;
+    font-size: 1.02rem;
+    line-height: 1.3;
+}

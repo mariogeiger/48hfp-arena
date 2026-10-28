@@ -538,10 +538,14 @@ fn BtSimulation() -> impl IntoView {
 #[component]
 fn StatsSection() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
+    let item_label = crate::state::capitalize(&crate::state::SiteConfig::get().noun_plural);
+    let voted_label = format!("{} Voted On", item_label);
 
     // Imperative rendering with change detection for bump animation
     Effect::new({
         let state = state.clone();
+        let item_label = item_label.clone();
+        let voted_label = voted_label.clone();
         let prev_stats: std::cell::RefCell<Option<crate::state::Stats>> =
             std::cell::RefCell::new(None);
         move || {
@@ -577,8 +581,8 @@ fn StatsSection() -> impl IntoView {
                     <div class="stats-grid">
                         <div class="stat-card"><div class="stat-value" data-bump="{}">{}</div><div class="stat-label">Total Votes</div></div>
                         <div class="stat-card"><div class="stat-value" data-bump="{}">{}</div><div class="stat-label">Voters</div></div>
-                        <div class="stat-card"><div class="stat-value" data-bump="{}">{}</div><div class="stat-label">Films</div></div>
-                        <div class="stat-card"><div class="stat-value" data-bump="{}">{}</div><div class="stat-label">Films Voted On</div></div>
+                        <div class="stat-card"><div class="stat-value" data-bump="{}">{}</div><div class="stat-label">{}</div></div>
+                        <div class="stat-card"><div class="stat-value" data-bump="{}">{}</div><div class="stat-label">{}</div></div>
                     </div>
                 </div>"#,
                 changed_votes,
@@ -587,8 +591,10 @@ fn StatsSection() -> impl IntoView {
                 s.active_users,
                 changed_films,
                 s.total_films,
+                item_label,
                 changed_fwv,
                 s.films_with_votes,
+                voted_label,
             );
             container.set_inner_html(&html);
 
@@ -675,6 +681,13 @@ fn ContributionsSection() -> impl IntoView {
 #[component]
 fn SuggestSection() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
+    // The correction form is dataset-specific; only show it when the site
+    // configures a GitHub repo to file issues against.
+    let repo = crate::state::SiteConfig::get().suggest_repo;
+    if repo.is_empty() {
+        return ().into_any();
+    }
+    let repo_url = repo.clone();
     let suggest_film = RwSignal::new(String::new());
     let suggest_title = RwSignal::new(String::new());
     let suggest_team = RwSignal::new(String::new());
@@ -777,7 +790,8 @@ fn SuggestSection() -> impl IntoView {
                     let body = format!("{}\n\n{}\n", heading, lines.join("\n"));
 
                     let url = format!(
-                        "https://github.com/mariogeiger/48hfp-arena/issues/new?title={}&body={}",
+                        "https://github.com/{}/issues/new?title={}&body={}",
+                        repo_url,
                         js_sys::encode_uri_component(&issue_title),
                         js_sys::encode_uri_component(&body),
                     );
@@ -788,6 +802,7 @@ fn SuggestSection() -> impl IntoView {
             </div>
         </div>
     }
+    .into_any()
 }
 
 #[component]

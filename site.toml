@@ -1,0 +1,33 @@
+# Dev/default site config — used by `cargo run` and `trunk serve` from the repo
+# root. Real deployments live in per-instance folders under ~/server/versus/<name>/
+# each with their own site.toml. See ~/server/server.md.
+#
+# This default mirrors the 48hfp film-ranking site.
+
+display_name = "FilmRank"
+tagline      = "Pairwise film ranking for the 48 Hour Film Project"
+
+port        = 4848
+data_csv    = "data.csv"
+db_path     = "db.json"
+backup_dir  = "backups"
+banned_path = "banned.txt"
+client_dist = "./client/dist"
+
+has_image      = true
+image_fallback = "https://www.48hourfilm.com/storage/posters/48HFP {City} 2025 - {Team} - Poster - file 1.jpg"
+duel_question = ""
+noun          = "film"
+noun_plural   = "films"
+welcome_text  = "Please only vote on pairs of films you have actually watched. Your honest comparisons make the ranking meaningful for everyone."
+unknown_label = "Haven't seen it"
+link_label    = "Watch"
+suggest_repo  = "mariogeiger/48hfp-arena"
+source_url    = "https://github.com/mariogeiger/48hfp-arena"
+
+[columns]
+label    = "Title"
+sublabel = "Team"
+detail   = "City"
+image    = "Poster URL"
+link     = "Video URL"

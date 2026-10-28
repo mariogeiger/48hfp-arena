@@ -1,11 +1,20 @@
 use crate::api;
 use crate::components::poster::Poster;
-use crate::state::AppState;
+use crate::state::{AppState, SiteConfig};
 use leptos::prelude::*;
 
 #[component]
 pub fn SelectPage() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
+    let cfg = SiteConfig::get();
+    let has_image = cfg.has_image;
+    let noun_plural = cfg.noun_plural.clone();
+    let prompt = format!(
+        "Select the {} you know, then compare them head-to-head.",
+        noun_plural
+    );
+    let search_placeholder = format!("Search {}...", noun_plural);
+    let status_plural = noun_plural.clone();
 
     let state_ds = state.clone();
     let pending_save: StoredValue<Option<send_wrapper::SendWrapper<crate::timeout::Timeout>>> =
@@ -46,12 +55,12 @@ pub fn SelectPage() -> impl IntoView {
 
     view! {
         <div class="select-header">
-            <p>"Select the films you remember, then compare them head-to-head."</p>
+            <p>{prompt}</p>
             <div class="search-wrapper">
                 <input
                     class="search-box"
                     type="text"
-                    placeholder="Search films, teams, cities..."
+                    placeholder=search_placeholder
                     on:input=move |ev| {
                         state.search_query.set(event_target_value(&ev));
                     }
@@ -131,7 +140,7 @@ pub fn SelectPage() -> impl IntoView {
                             }
                         >
                             <div class="film-check"></div>
-                            <Poster url=poster_url />
+                            {has_image.then(|| view! { <Poster url=poster_url /> })}
                             <div class="film-info">
                                 <div class="film-title">{title}</div>
                                 <div class="film-meta">{meta}</div>
@@ -153,9 +162,9 @@ pub fn SelectPage() -> impl IntoView {
             {move || {
                 let n = selected_count.get();
                 if n < 2 {
-                    "Select at least 2 films to compare".to_string()
+                    format!("Select at least 2 {} to compare", status_plural)
                 } else {
-                    format!("{} films selected", n)
+                    format!("{} {} selected", n, status_plural)
                 }
             }}
         </div>
