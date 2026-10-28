@@ -60,9 +60,7 @@ impl AppState {
         users: HashMap<String, UserState>,
         vote_tx: broadcast::Sender<VoteEvent>,
         votes_on_disk: usize,
-        require_selection: bool,
-        min_votes: u32,
-        min_voters: usize,
+        cfg: &SiteConfig,
     ) -> Self {
         Self {
             films,
@@ -71,9 +69,9 @@ impl AppState {
             vote_tx,
             votes_on_disk: AtomicUsize::new(votes_on_disk),
             banned: Mutex::new(HashSet::new()),
-            require_selection,
-            min_votes,
-            min_voters,
+            require_selection: cfg.require_selection,
+            min_votes: cfg.min_votes,
+            min_voters: cfg.min_voters,
         }
     }
 

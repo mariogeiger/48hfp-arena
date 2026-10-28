@@ -8,8 +8,8 @@ mod persistence;
 use actix_files::Files;
 use actix_web::{App, HttpServer, middleware, web};
 use std::collections::HashMap;
-use std::net::TcpListener;
-use std::os::unix::io::FromRawFd;
+use std::os::fd::{FromRawFd, OwnedFd};
+use std::os::unix::net::UnixListener;
 use tokio::sync::broadcast;
 
 use config::SiteConfig;
@@ -45,9 +45,7 @@ async fn main() -> std::io::Result<()> {
         users,
         vote_tx,
         votes_on_disk,
-        cfg.require_selection,
-        cfg.min_votes,
-        cfg.min_voters,
+        &cfg,
     ));
     // Config the browser needs, precomputed once and served at /api/config.
     let client_config = web::Data::new(cfg.client_json());
@@ -64,13 +62,11 @@ async fn main() -> std::io::Result<()> {
         }
     });
 
-    log::info!("Server running at http://localhost:{port}");
-
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
             .app_data(client_config.clone())
-            .wrap(middleware::Logger::new("%a \"%r\" %s %b %Dms"))
+            .wrap(middleware::Logger::new("%{r}a \"%r\" %s %b %Dms"))
             .route("/health", web::get().to(handlers::health))
             .route("/api/config", web::get().to(handlers::config))
             .route("/api/films", web::get().to(handlers::get_films))
@@ -96,17 +92,33 @@ async fn main() -> std::io::Result<()> {
     })
     .shutdown_timeout(1);
 
-    // Use systemd socket activation if LISTEN_FDS is set, otherwise bind directly
-    let server = if std::env::var("LISTEN_FDS")
-        .map(|v| v.parse::<u32>().unwrap_or(0))
-        .unwrap_or(0)
-        >= 1
-    {
-        let listener = unsafe { TcpListener::from_raw_fd(3) };
-        server.listen(listener)?
-    } else {
-        server.bind(("127.0.0.1", port))?
+    let server = match inherited_listener() {
+        Some(listener) => {
+            log::info!("Server running on the socket systemd passed");
+            server.listen_uds(listener)?
+        }
+        None => {
+            log::info!("Server running at http://127.0.0.1:{port}");
+            server.bind(("127.0.0.1", port))?
+        }
     };
 
     server.run().await
+}
+
+/// The one listening socket systemd passes this process, by the protocol of
+/// `sd_listen_fds`: `LISTEN_PID` names it, `LISTEN_FDS` counts the sockets,
+/// which begin at descriptor 3. It comes back as a duplicate that closes on
+/// exec, and descriptor 3 is closed, so no child could inherit the listener.
+fn inherited_listener() -> Option<UnixListener> {
+    let ours = std::env::var("LISTEN_PID").ok()?.parse::<u32>().ok()? == std::process::id();
+    let one = std::env::var("LISTEN_FDS").ok()? == "1";
+    if !(ours && one) {
+        return None;
+    }
+    // SAFETY: by the protocol, descriptor 3 is a listening socket this process owns.
+    let passed = unsafe { OwnedFd::from_raw_fd(3) };
+    Some(UnixListener::from(
+        passed.try_clone().expect("the socket can be duplicated"),
+    ))
 }
