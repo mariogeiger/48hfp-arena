@@ -92,6 +92,10 @@ pub struct SiteConfig {
     /// full set. Defaults to true (the 48hfp "films I've seen" behaviour).
     #[serde(default = "default_true")]
     pub require_selection: bool,
+    /// Whether every item starts selected, the viewer taking out those they
+    /// don't know; else none does. Items added later join the selection too.
+    #[serde(default)]
+    pub select_by_default: bool,
     /// Leaderboard eligibility: an item appears once it has at least this many
     /// comparisons from at least `min_voters` distinct voters. Defaults match
     /// the original 48hfp thresholds (10 / 2). Set both to 1 to populate the
@@ -202,6 +206,7 @@ impl SiteConfig {
             "tagline": self.tagline,
             "has_image": self.has_image,
             "require_selection": self.require_selection,
+            "select_by_default": self.select_by_default,
             "duel_question": self.duel_question,
             "noun": self.noun,
             "noun_plural": self.noun_plural,

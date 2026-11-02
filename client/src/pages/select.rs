@@ -15,7 +15,10 @@ pub fn SelectPage() -> impl IntoView {
     let state_ds = state.clone();
     let pending_save: StoredValue<Option<send_wrapper::SendWrapper<crate::timeout::Timeout>>> =
         StoredValue::new(None);
+    // Stored at once, so a reload of the items keeps it; sent to the server
+    // once the clicks pause.
     let debounce_save = move || {
+        state_ds.store_selection();
         pending_save.set_value(None); // dropping the old Timeout cancels it
         let s = state_ds.clone();
         pending_save.set_value(Some(send_wrapper::SendWrapper::new(

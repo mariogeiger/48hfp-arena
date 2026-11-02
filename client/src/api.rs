@@ -88,6 +88,7 @@ pub async fn boot(state: &AppState) {
             state.board.set(board);
         }
         state.films.set(films);
+        state.restore_selection();
     }
 
     let require_selection = SiteConfig::get().require_selection;
@@ -127,9 +128,8 @@ pub async fn boot(state: &AppState) {
 }
 
 pub async fn save_selection(state: &AppState) {
+    state.store_selection();
     let ids: Vec<usize> = state.selected_ids.get_untracked().into_iter().collect();
-    let storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
-    let _ = storage.set_item("filmrank_selected", &serde_json::to_string(&ids).unwrap());
 
     let _ = api_post(
         "/api/selection",
@@ -253,6 +253,7 @@ pub async fn reload_films(state: &AppState) {
             .collect();
         films.sort_by_key(|f| (rank_by_id.get(&f.id).copied().unwrap_or(usize::MAX), f.id));
         state.films.set(films);
+        state.restore_selection();
     }
 }
 

@@ -16,6 +16,8 @@ pub struct SiteConfig {
     #[serde(default = "default_true")]
     pub require_selection: bool,
     #[serde(default)]
+    pub select_by_default: bool,
+    #[serde(default)]
     pub duel_question: String,
     #[serde(default = "default_noun")]
     pub noun: String,
@@ -82,6 +84,7 @@ impl Default for SiteConfig {
             display_name: "Versus".into(),
             has_image: true,
             require_selection: true,
+            select_by_default: false,
             duel_question: String::new(),
             noun: default_noun(),
             noun_plural: default_noun_plural(),
@@ -289,12 +292,12 @@ impl AppState {
                 id
             });
 
-        let selected_ids: HashSet<usize> = storage
-            .get_item("filmrank_selected")
-            .ok()
-            .flatten()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
+        // Selecting by default, the selection is known once the items are.
+        let selected_ids: HashSet<usize> = if SiteConfig::get().select_by_default {
+            HashSet::new()
+        } else {
+            read_ids(&storage, SELECTED_KEY)
+        };
 
         Self {
             page: RwSignal::new(Page::Swipe),
@@ -382,6 +385,42 @@ impl AppState {
             .set_hash(self.page.get_untracked().as_str());
     }
 
+    /// The selection as stored: on a site that selects by default, every item
+    /// but those the viewer took out, so that new items join it.
+    pub fn restore_selection(&self) {
+        if !SiteConfig::get().select_by_default {
+            return;
+        }
+        let storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
+        let excluded = read_ids(&storage, EXCLUDED_KEY);
+        let ids = self
+            .films
+            .get_untracked()
+            .iter()
+            .map(|f| f.id)
+            .filter(|id| !excluded.contains(id))
+            .collect();
+        self.selected_ids.set(ids);
+    }
+
+    /// Store the selection: the items taken out on a site that selects by
+    /// default, else the items selected.
+    pub fn store_selection(&self) {
+        let storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
+        let selected = self.selected_ids.get_untracked();
+        let (key, ids): (&str, Vec<usize>) = if SiteConfig::get().select_by_default {
+            let films = self.films.get_untracked();
+            let excluded = films
+                .iter()
+                .map(|f| f.id)
+                .filter(|id| !selected.contains(id));
+            (EXCLUDED_KEY, excluded.collect())
+        } else {
+            (SELECTED_KEY, selected.into_iter().collect())
+        };
+        let _ = storage.set_item(key, &serde_json::to_string(&ids).unwrap());
+    }
+
     pub fn navigate(&self, page: Page) {
         self.sheet.set(None);
         self.page.set(page);
@@ -413,6 +452,18 @@ impl AppState {
             }
         });
     }
+}
+
+const SELECTED_KEY: &str = "filmrank_selected";
+const EXCLUDED_KEY: &str = "filmrank_excluded";
+
+fn read_ids(storage: &web_sys::Storage, key: &str) -> HashSet<usize> {
+    storage
+        .get_item(key)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
 }
 
 fn gen_uuid_v4() -> String {
