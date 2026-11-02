@@ -1,6 +1,7 @@
 use crate::api;
 use crate::components::poster;
-use crate::state::{AppState, SiteConfig};
+use crate::i18n::{or_default, say, t};
+use crate::state::{AppState, Sheet, SiteConfig};
 use leptos::prelude::*;
 use std::collections::{HashMap, HashSet};
 use versus_shared::Film;
@@ -12,15 +13,9 @@ pub fn BoardPage() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
     let cfg = SiteConfig::get();
     let has_image = cfg.has_image;
-    let link_label = cfg.link_label.clone();
-    let unranked_banner = if cfg.unranked_banner.is_empty() {
-        format!(
-            "Not enough votes yet to rank these {}: they are shown in random order.",
-            cfg.noun_plural
-        )
-    } else {
-        cfg.unranked_banner.clone()
-    };
+    let editable = cfg.editable;
+    let link_label = or_default(&cfg.link_label, t().open_link);
+    let unranked_banner = or_default(&cfg.unranked_banner, t().board_unranked);
     // Each item's random sort key, drawn once per page load so the unranked
     // order stays put while votes arrive.
     let shuffle_keys = StoredValue::new(HashMap::<usize, f64>::new());
@@ -130,10 +125,9 @@ pub fn BoardPage() -> impl IntoView {
                     };
                     let stats = format!(
                         r#"<div class="board-score">{}</div>
-                        <div class="board-record">{}W - {}L</div>"#,
+                        <div class="board-record">{}</div>"#,
                         item.rating.round() as i64,
-                        item.wins,
-                        item.losses,
+                        say(t().board_record, &[("w", &item.wins), ("l", &item.losses)]),
                     );
                     item_html("board-item", &(i + 1).to_string(), &film, &stats)
                 })
@@ -257,14 +251,37 @@ pub fn BoardPage() -> impl IntoView {
         }
     });
 
+    // A tap on an item opens its sheet, unless it was on the item's link.
+    let open_item = move |ev: web_sys::MouseEvent| {
+        let Some(target) = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        else {
+            return;
+        };
+        if target.closest("a").ok().flatten().is_some() {
+            return;
+        }
+        let id = target
+            .closest("[data-film-id]")
+            .ok()
+            .flatten()
+            .and_then(|item| item.get_attribute("data-film-id"))
+            .and_then(|id| id.parse().ok());
+        if let Some(id) = id {
+            state.open_sheet(Sheet::Item(id));
+        }
+    };
+
     view! {
         <div class="page-header">
-            <h1>"Leaderboard"</h1>
-            <p>"Bradley-Terry rankings based on all voter comparisons"</p>
+            <h1>{t().board_title}</h1>
+            <p>{t().board_subtitle}</p>
         </div>
-        <div class="board-list" id="board-list"></div>
+        <div class="board-list" id="board-list" on:click=open_item></div>
+        {editable.then(|| view! { <crate::components::proposals::Proposals /> })}
         <div class="board-export">
-            <a href="/api/leaderboard.csv" target="_blank">"Export as CSV"</a>
+            <a href="/api/leaderboard.csv" target="_blank">{t().board_export}</a>
         </div>
     }
 }

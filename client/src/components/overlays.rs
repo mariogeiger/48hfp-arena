@@ -1,9 +1,10 @@
+use crate::i18n::{or_default, t};
 use crate::state::{AppState, SiteConfig};
 use leptos::prelude::*;
 
 #[component]
 pub fn WelcomeOverlay() -> impl IntoView {
-    let welcome_text = SiteConfig::get().welcome_text;
+    let welcome_text = or_default(&SiteConfig::get().welcome_text, t().welcome_text);
     let promised = web_sys::window()
         .unwrap()
         .local_storage()
@@ -23,7 +24,7 @@ pub fn WelcomeOverlay() -> impl IntoView {
             id="welcome-overlay"
         >
             <div class="welcome-bubble">
-                <h2>"Welcome!"</h2>
+                <h2>{t().welcome_heading}</h2>
                 <p>
                     {welcome_text}
                 </p>
@@ -40,10 +41,10 @@ pub fn WelcomeOverlay() -> impl IntoView {
                             show.set(false);
                         }
                     >
-                        "I promise"
+                        {t().welcome_promise}
                     </button>
                     <a href="https://google.com" class="welcome-btn-nope">
-                        "I can't promise that"
+                        {t().welcome_refuse}
                     </a>
                 </div>
             </div>
@@ -62,10 +63,8 @@ pub fn BannedOverlay() -> impl IntoView {
             id="banned-overlay"
         >
             <div class="welcome-bubble">
-                <h2>"Account Suspended"</h2>
-                <p>
-                    "Your account has been suspended for violating the voting rules. If you believe this is a mistake, please contact the site administrator."
-                </p>
+                <h2>{t().banned_heading}</h2>
+                <p>{t().banned_text}</p>
             </div>
         </div>
     }

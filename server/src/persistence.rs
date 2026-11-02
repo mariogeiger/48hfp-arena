@@ -1,12 +1,14 @@
 use crate::bt::{BtRating, run_bradley_terry};
+use crate::catalog::Catalog;
 use crate::config::SiteConfig;
 use crate::models::{PersistentData, UserState};
-use versus_shared::{Film, VoteEvent, parse_pair_key};
+use crate::throttle::Throttle;
+use versus_shared::{Film, LiveChange, LiveEvent, parse_pair_key};
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::broadcast;
 
 const MAX_BACKUPS: usize = 100;
@@ -39,10 +41,16 @@ fn st() -> &'static Storage {
 }
 
 pub struct AppState {
-    pub films: HashMap<usize, Film>,
+    /// The films as of the last change to the catalog; see `films()`.
+    films: RwLock<Arc<HashMap<usize, Film>>>,
+    pub catalog: Mutex<Catalog>,
+    pub throttle: Throttle,
+    /// Whether the site takes edits (`SiteConfig::editable`).
+    pub editable: bool,
+    pub uploads_dir: String,
     pub bt_ratings: Mutex<HashMap<usize, BtRating>>,
     pub users: Mutex<HashMap<String, UserState>>,
-    pub vote_tx: broadcast::Sender<VoteEvent>,
+    pub live_tx: broadcast::Sender<LiveEvent>,
     /// Vote count loaded from disk — save() refuses to write fewer votes than this.
     votes_on_disk: AtomicUsize,
     pub banned: Mutex<HashSet<String>>,
@@ -55,24 +63,46 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(
-        films: HashMap<usize, Film>,
+        catalog: Catalog,
         ratings: HashMap<usize, BtRating>,
         users: HashMap<String, UserState>,
-        vote_tx: broadcast::Sender<VoteEvent>,
+        live_tx: broadcast::Sender<LiveEvent>,
         votes_on_disk: usize,
         cfg: &SiteConfig,
     ) -> Self {
         Self {
-            films,
+            films: RwLock::new(Arc::new(catalog.published())),
+            catalog: Mutex::new(catalog),
+            throttle: Throttle::default(),
+            editable: cfg.editable,
+            uploads_dir: cfg.uploads_dir.clone(),
             bt_ratings: Mutex::new(ratings),
             users: Mutex::new(users),
-            vote_tx,
+            live_tx,
             votes_on_disk: AtomicUsize::new(votes_on_disk),
             banned: Mutex::new(HashSet::new()),
             require_selection: cfg.require_selection,
             min_votes: cfg.min_votes,
             min_voters: cfg.min_voters,
         }
+    }
+
+    /// The films people can vote on now: a snapshot, cheap to take and safe
+    /// to hold across other locks.
+    pub fn films(&self) -> Arc<HashMap<usize, Film>> {
+        self.films.read().unwrap().clone()
+    }
+
+    /// Take the catalog's films as the current ones, each with a rating.
+    pub fn publish(&self) {
+        let films = Arc::new(self.catalog.lock().unwrap().published());
+        {
+            let mut ratings = self.bt_ratings.lock().unwrap();
+            for &id in films.keys() {
+                ratings.entry(id).or_insert_with(|| BtRating::new(id));
+            }
+        }
+        *self.films.write().unwrap() = films;
     }
 
     pub fn is_banned(&self, user_id: &str) -> bool {
@@ -90,11 +120,15 @@ impl AppState {
             }
             *current = new_banned.clone();
         }
-        log::info!("Ban list changed, recomputing ratings...");
-        let mut ratings = self.bt_ratings.lock().unwrap();
-        let users = self.users.lock().unwrap();
-        Self::recompute_ratings(&mut ratings, &users, &new_banned);
-        log::info!("Ratings recomputed after ban list update");
+        log::info!("Ban list changed, recomputing ratings and films...");
+        {
+            let mut ratings = self.bt_ratings.lock().unwrap();
+            let users = self.users.lock().unwrap();
+            Self::recompute_ratings(&mut ratings, &users, &new_banned);
+        }
+        self.catalog.lock().unwrap().refold(&new_banned);
+        self.publish();
+        log::info!("Ratings and films recomputed after ban list update");
     }
 
     /// Recompute BT ratings from scratch using all non-banned users' votes.
@@ -130,15 +164,15 @@ impl AppState {
         run_bradley_terry(ratings);
     }
 
-    /// Force the vote floor to the current in-memory count, so save() won't
-    /// refuse after a legitimate vote deletion.
-    pub fn broadcast(&self, user_id: &str, message: String) {
-        let _ = self.vote_tx.send(VoteEvent {
+    pub fn broadcast(&self, user_id: &str, change: LiveChange) {
+        let _ = self.live_tx.send(LiveEvent {
             user_id: user_id.to_string(),
-            message,
+            change,
         });
     }
 
+    /// Force the vote floor to the current in-memory count, so save() won't
+    /// refuse after a legitimate vote deletion.
     pub fn sync_vote_floor(&self) {
         let users = self.users.lock().unwrap();
         let current = count_votes(&users);

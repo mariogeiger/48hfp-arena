@@ -1,24 +1,25 @@
+use crate::i18n::Lang;
 use leptos::prelude::*;
 use std::collections::HashSet;
-use versus_shared::Film;
+use versus_shared::{Film, Proposal};
 
-/// Per-site configuration fetched once from `/api/config` before the app mounts
-/// and provided through Leptos context. It never changes at runtime, so it is
-/// stored as a plain value rather than a signal.
+/// Per-site configuration fetched once from `/api/config` before the app mounts.
+/// It never changes at runtime, so it is installed once as a plain global value:
+/// readable anywhere, including async code that runs outside any reactive owner.
+/// Empty copy means the site leaves the wording to its language (see
+/// `i18n::or_default`).
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SiteConfig {
     pub display_name: String,
-    #[serde(default)]
-    pub tagline: String,
     #[serde(default)]
     pub has_image: bool,
     #[serde(default = "default_true")]
     pub require_selection: bool,
     #[serde(default)]
     pub duel_question: String,
-    #[serde(default)]
+    #[serde(default = "default_noun")]
     pub noun: String,
-    #[serde(default)]
+    #[serde(default = "default_noun_plural")]
     pub noun_plural: String,
     #[serde(default)]
     pub welcome_text: String,
@@ -29,51 +30,90 @@ pub struct SiteConfig {
     #[serde(default)]
     pub unranked_banner: String,
     #[serde(default)]
-    pub suggest_repo: String,
-    #[serde(default)]
     pub source_url: String,
+    #[serde(default)]
+    pub editable: bool,
+    #[serde(default)]
+    pub lang: Lang,
+    #[serde(default)]
+    pub fields: FieldNames,
+    #[serde(default)]
+    pub min_votes: u32,
+    #[serde(default)]
+    pub min_voters: u32,
+}
+
+/// What the site calls each field of an item; `None` for the fields it lacks.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct FieldNames {
+    pub title: Option<String>,
+    pub team: Option<String>,
+    pub city: Option<String>,
+    pub poster_url: Option<String>,
+    pub video_url: Option<String>,
+}
+
+impl Default for FieldNames {
+    fn default() -> Self {
+        Self {
+            title: Some(String::new()),
+            team: Some(String::new()),
+            city: Some(String::new()),
+            poster_url: Some(String::new()),
+            video_url: Some(String::new()),
+        }
+    }
 }
 
 fn default_true() -> bool {
     true
 }
+fn default_noun() -> String {
+    "item".into()
+}
+fn default_noun_plural() -> String {
+    "items".into()
+}
 
 impl Default for SiteConfig {
     fn default() -> Self {
-        // Film defaults, so the UI stays sensible even if /api/config fails.
+        // So the UI stays sensible even if /api/config fails.
         Self {
-            display_name: "FilmRank".into(),
-            tagline: String::new(),
+            display_name: "Versus".into(),
             has_image: true,
             require_selection: true,
             duel_question: String::new(),
-            noun: "film".into(),
-            noun_plural: "films".into(),
-            welcome_text: "Please only vote on pairs you have real opinions about. \
-                           Your honest comparisons make the ranking meaningful for everyone."
-                .into(),
-            unknown_label: "Skip this one".into(),
-            link_label: "Open".into(),
+            noun: default_noun(),
+            noun_plural: default_noun_plural(),
+            welcome_text: String::new(),
+            unknown_label: String::new(),
+            link_label: String::new(),
             unranked_banner: String::new(),
-            suggest_repo: String::new(),
             source_url: String::new(),
+            editable: false,
+            lang: Lang::En,
+            fields: FieldNames::default(),
+            min_votes: 10,
+            min_voters: 2,
         }
     }
 }
 
-impl SiteConfig {
-    /// Read the config from Leptos context (falls back to defaults if missing).
-    pub fn get() -> Self {
-        use_context::<SiteConfig>().unwrap_or_default()
-    }
+thread_local! {
+    static SITE_CONFIG: std::cell::OnceCell<SiteConfig> = const { std::cell::OnceCell::new() };
 }
 
-/// Capitalize the first character — for turning `noun_plural` into a heading.
-pub fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
+impl SiteConfig {
+    /// Install the config, once, before the app mounts.
+    pub fn install(self) {
+        SITE_CONFIG.with(|c| {
+            let _ = c.set(self);
+        });
+    }
+
+    /// The installed config, or the defaults before installation.
+    pub fn get() -> Self {
+        SITE_CONFIG.with(|c| c.get().cloned().unwrap_or_default())
     }
 }
 
@@ -149,7 +189,7 @@ pub struct Stats {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Contribution {
-    pub label: String,
+    pub rank: u64,
     pub is_you: bool,
     pub votes: u64,
     pub films_voted: u64,
@@ -219,7 +259,20 @@ pub struct AppState {
     pub toasts: RwSignal<Vec<Toast>>,
     pub banned: RwSignal<bool>,
 
+    /// Proposed items awaiting review (only on editable sites).
+    pub proposals: RwSignal<Vec<Proposal>>,
+    /// The item sheet open over the page, if any.
+    pub sheet: RwSignal<Option<Sheet>>,
+
     pub user_id: String,
+}
+
+/// What the item sheet shows: an item, published or proposed, or the form
+/// for proposing a new one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sheet {
+    Item(usize),
+    New,
 }
 
 impl AppState {
@@ -264,6 +317,9 @@ impl AppState {
             toasts: RwSignal::new(Vec::new()),
             banned: RwSignal::new(false),
 
+            proposals: RwSignal::new(Vec::new()),
+            sheet: RwSignal::new(None),
+
             user_id,
         }
     }
@@ -283,7 +339,51 @@ impl AppState {
         .forget();
     }
 
+    /// Open the sheet of an item over the leaderboard; its link is `#film/<id>`.
+    pub fn open_sheet(&self, sheet: Sheet) {
+        if self.page.get_untracked() != Page::Board {
+            self.navigate(Page::Board);
+        }
+        if let Sheet::Item(id) = sheet {
+            let _ = web_sys::window()
+                .unwrap()
+                .location()
+                .set_hash(&format!("film/{id}"));
+        }
+        self.sheet.set(Some(sheet));
+    }
+
+    /// Show what the address names, when the browser changes it (the back
+    /// button, a link): an item's sheet for `#film/<id>`, else a page.
+    pub fn follow_hash(&self) {
+        let hash = web_sys::window()
+            .unwrap()
+            .location()
+            .hash()
+            .unwrap_or_default();
+        let hash = hash.trim_start_matches('#');
+        if let Some(id) = hash.strip_prefix("film/").and_then(|id| id.parse().ok()) {
+            if self.sheet.get_untracked() != Some(Sheet::Item(id)) {
+                self.open_sheet(Sheet::Item(id));
+            }
+        } else if let Some(page) = Page::from_str(hash) {
+            self.sheet.set(None);
+            if self.page.get_untracked() != page {
+                self.navigate(page);
+            }
+        }
+    }
+
+    pub fn close_sheet(&self) {
+        self.sheet.set(None);
+        let _ = web_sys::window()
+            .unwrap()
+            .location()
+            .set_hash(self.page.get_untracked().as_str());
+    }
+
     pub fn navigate(&self, page: Page) {
+        self.sheet.set(None);
         self.page.set(page);
 
         // Update body class for swipe
@@ -304,7 +404,10 @@ impl AppState {
         wasm_bindgen_futures::spawn_local(async move {
             match page {
                 Page::Swipe => crate::api::load_pair(&state).await,
-                Page::Board => crate::api::load_board(&state).await,
+                Page::Board => {
+                    crate::api::load_board(&state).await;
+                    crate::wiki::load_proposals(&state).await;
+                }
                 Page::More => crate::api::load_more(&state).await,
                 Page::Select => {}
             }

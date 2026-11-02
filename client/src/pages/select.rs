@@ -1,5 +1,6 @@
 use crate::api;
 use crate::components::poster::Poster;
+use crate::i18n::{say, t};
 use crate::state::{AppState, SiteConfig};
 use leptos::prelude::*;
 
@@ -8,13 +9,8 @@ pub fn SelectPage() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
     let cfg = SiteConfig::get();
     let has_image = cfg.has_image;
-    let noun_plural = cfg.noun_plural.clone();
-    let prompt = format!(
-        "Select the {} you know, then compare them head-to-head.",
-        noun_plural
-    );
-    let search_placeholder = format!("Search {}...", noun_plural);
-    let status_plural = noun_plural.clone();
+    let prompt = say(t().select_prompt, &[]);
+    let search_placeholder = say(t().select_search, &[]);
 
     let state_ds = state.clone();
     let pending_save: StoredValue<Option<send_wrapper::SendWrapper<crate::timeout::Timeout>>> =
@@ -92,14 +88,14 @@ pub fn SelectPage() -> impl IntoView {
                         });
                         debounce_save();
                     }
-                }>"Select All"</button>
+                }>{t().select_all}</button>
                 <button on:click={
                     let debounce_save = debounce_save.clone();
                     move |_| {
                         state_da.selected_ids.set(Default::default());
                         debounce_save();
                     }
-                }>"Deselect All"</button>
+                }>{t().deselect_all}</button>
             </div>
         </div>
         <div class="film-list" id="film-list">
@@ -162,9 +158,9 @@ pub fn SelectPage() -> impl IntoView {
             {move || {
                 let n = selected_count.get();
                 if n < 2 {
-                    format!("Select at least 2 {} to compare", status_plural)
+                    say(t().select_too_few, &[])
                 } else {
-                    format!("{} {} selected", n, status_plural)
+                    say(t().select_count, &[("n", &n)])
                 }
             }}
         </div>

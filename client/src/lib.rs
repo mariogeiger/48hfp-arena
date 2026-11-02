@@ -1,8 +1,10 @@
 mod api;
 mod components;
+mod i18n;
 mod pages;
 mod state;
 mod timeout;
+mod wiki;
 
 use leptos::prelude::*;
 use state::{AppState, Page};
@@ -11,17 +13,18 @@ use wasm_bindgen::JsCast;
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub fn main() {
     console_error_panic_hook::set_once();
-    // Fetch per-site config first, then mount with it in context. Config never
-    // changes at runtime, so a plain value in context beats a signal.
+    // Fetch per-site config first, install it, then mount.
     wasm_bindgen_futures::spawn_local(async {
         let config = api::fetch_config().await;
+        i18n::set_speech(config.lang, &config.noun, &config.noun_plural);
         if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
             doc.set_title(&config.display_name);
+            if let Some(root) = doc.document_element() {
+                let _ = root.set_attribute("lang", config.lang.tag());
+            }
         }
-        leptos::mount::mount_to_body(move || {
-            provide_context(config.clone());
-            view! { <App /> }
-        });
+        config.install();
+        leptos::mount::mount_to_body(|| view! { <App /> });
     });
 }
 
@@ -43,6 +46,18 @@ fn App() -> impl IntoView {
     let state_sse = state.clone();
     Effect::new(move || {
         api::init_vote_stream(&state_sse);
+    });
+
+    // The address changed without a reload: follow it.
+    let state_hash = state.clone();
+    Effect::new(move || {
+        let s = state_hash.clone();
+        let closure = wasm_bindgen::closure::Closure::<dyn Fn()>::new(move || s.follow_hash());
+        web_sys::window()
+            .unwrap()
+            .add_event_listener_with_callback("hashchange", closure.as_ref().unchecked_ref())
+            .unwrap();
+        closure.forget();
     });
 
     // Visibility change handler
@@ -98,12 +113,15 @@ fn App() -> impl IntoView {
                     {
                         notified.insert(film.film_id);
                         notified.insert(displaced.film_id);
-                        swaps.push(format!(
-                                "\u{2B06}\u{FE0F} <strong>{}</strong> overtook <strong>{}</strong> \u{2192} #{}",
-                                api::html_escape(&film.title),
-                                api::html_escape(&displaced.title),
-                                i + 1,
-                            ));
+                        let line = i18n::fill(
+                            i18n::t().overtook,
+                            &[
+                                ("a", &api::html_escape(&film.title)),
+                                ("b", &api::html_escape(&displaced.title)),
+                                ("n", &(i + 1)),
+                            ],
+                        );
+                        swaps.push(format!("\u{2B06}\u{FE0F} {line}"));
                     }
                 }
                 if !swaps.is_empty() {
@@ -133,6 +151,7 @@ fn App() -> impl IntoView {
             <pages::more::MorePage />
         </div>
 
+        <components::sheet::ItemSheet />
         <components::toast::ToastContainer />
 
         <components::overlays::WelcomeOverlay />

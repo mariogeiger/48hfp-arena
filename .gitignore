@@ -4,3 +4,5 @@ db.json.tmp
 backups/
 banned.txt
 client/dist/
+edits.jsonl
+uploads/

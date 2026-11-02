@@ -7,7 +7,7 @@
 //! directory, so each launchd instance just points its `WorkingDirectory` at
 //! its own instance folder.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Maps the columns of the site's `data.csv` onto the five generic display
 /// slots the UI knows how to render. Only `label` is required.
@@ -27,6 +27,29 @@ pub struct Columns {
     /// External link column (→ `Film.video_url`).
     #[serde(default)]
     pub link: Option<String>,
+}
+
+/// Display names for the columns, by the same slots as `Columns`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct FieldLabels {
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub sublabel: Option<String>,
+    #[serde(default)]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub image: Option<String>,
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Lang {
+    #[default]
+    En,
+    Fr,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -51,6 +74,12 @@ pub struct SiteConfig {
     /// shared repo build so a single `trunk build` serves every site.
     #[serde(default = "default_client_dist")]
     pub client_dist: String,
+    /// Journal of the films' revisions (see `catalog`).
+    #[serde(default = "default_edits_path")]
+    pub edits_path: String,
+    /// Directory of the posters people upload, served at `/uploads/`.
+    #[serde(default = "default_uploads_dir")]
+    pub uploads_dir: String,
 
     // ---- dataset shape ----
     pub columns: Columns,
@@ -75,6 +104,17 @@ pub struct SiteConfig {
     /// empty. `{Header}` tokens are replaced with that row's column values.
     #[serde(default)]
     pub image_fallback: Option<String>,
+    /// Whether anyone may edit the items and propose new ones, wiki-style.
+    #[serde(default)]
+    pub editable: bool,
+    /// What the edit form calls each column; a column without a name here is
+    /// called by its header in `data.csv`.
+    #[serde(default)]
+    pub field_labels: FieldLabels,
+
+    /// Language of the interface.
+    #[serde(default)]
+    pub lang: Lang,
 
     // ---- user-facing copy (served to the client via /api/config) ----
     /// Question shown above each duel, e.g. "Which matters most?".
@@ -89,19 +129,17 @@ pub struct SiteConfig {
     /// Welcome-overlay body text.
     #[serde(default)]
     pub welcome_text: String,
-    /// Label for the per-card "I don't know this one" button.
-    #[serde(default = "default_unknown_label")]
+    /// Label for the per-card "I don't know this one" button. Empty lets the
+    /// client say it in the site's language, as for the other copy below.
+    #[serde(default)]
     pub unknown_label: String,
     /// Label for the board's external link (the `link` column), e.g. "Watch".
-    #[serde(default = "default_link_label")]
+    #[serde(default)]
     pub link_label: String,
     /// Banner above the board's items that lack the votes to be ranked, which
-    /// it shows in random order. Empty lets the client say it in English.
+    /// it shows in random order.
     #[serde(default)]
     pub unranked_banner: String,
-    /// GitHub `owner/repo` for the "suggest a correction" form. Empty hides it.
-    #[serde(default)]
-    pub suggest_repo: String,
     /// URL behind the GitHub icon in the nav.
     #[serde(default)]
     pub source_url: String,
@@ -134,17 +172,17 @@ fn default_banned_path() -> String {
 fn default_client_dist() -> String {
     "./client/dist".into()
 }
+fn default_edits_path() -> String {
+    "edits.jsonl".into()
+}
+fn default_uploads_dir() -> String {
+    "uploads".into()
+}
 fn default_noun() -> String {
     "item".into()
 }
 fn default_noun_plural() -> String {
     "items".into()
-}
-fn default_unknown_label() -> String {
-    "Skip this one".into()
-}
-fn default_link_label() -> String {
-    "Open".into()
 }
 
 impl SiteConfig {
@@ -171,8 +209,30 @@ impl SiteConfig {
             "unknown_label": self.unknown_label,
             "link_label": self.link_label,
             "unranked_banner": self.unranked_banner,
-            "suggest_repo": self.suggest_repo,
             "source_url": self.source_url,
+            "editable": self.editable,
+            "min_votes": self.min_votes,
+            "min_voters": self.min_voters,
+            "lang": self.lang,
+            "fields": self.field_names(),
+        })
+    }
+
+    /// The display name of each column the site has; absent ones are null.
+    fn field_names(&self) -> serde_json::Value {
+        let c = &self.columns;
+        let l = &self.field_labels;
+        let name = |label: &Option<String>, header: &Option<String>| {
+            header
+                .as_ref()
+                .map(|h| label.clone().unwrap_or_else(|| h.clone()))
+        };
+        serde_json::json!({
+            "title": name(&l.label, &Some(c.label.clone())),
+            "team": name(&l.sublabel, &c.sublabel),
+            "city": name(&l.detail, &c.detail),
+            "poster_url": name(&l.image, &c.image),
+            "video_url": name(&l.link, &c.link),
         })
     }
 }

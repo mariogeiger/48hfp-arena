@@ -32,7 +32,8 @@ pub async fn config(cfg: web::Data<serde_json::Value>) -> HttpResponse {
 }
 
 pub async fn get_films(data: web::Data<AppState>) -> HttpResponse {
-    let films: Vec<&Film> = data.films.values().collect();
+    let films = data.films();
+    let films: Vec<&Film> = films.values().collect();
     HttpResponse::Ok().json(films)
 }
 
@@ -56,6 +57,7 @@ pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>)
     if data.is_banned(&query.user_id) {
         return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
     }
+    let films = data.films();
     // Collect user data then drop the lock before acquiring bt_ratings
     // (lock order: bt_ratings -> users; never hold users while taking bt_ratings)
     let (votes, seen, remaining) = {
@@ -64,11 +66,15 @@ pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>)
         let votes = user.compared_pairs.len();
 
         // When selection isn't required, every item is in play for everyone;
-        // otherwise use the user's own picked set.
+        // otherwise use the user's own picked set, as far as it is published.
         let seen: Vec<usize> = if data.require_selection {
-            user.seen_films.clone()
+            user.seen_films
+                .iter()
+                .copied()
+                .filter(|id| films.contains_key(id))
+                .collect()
         } else {
-            let mut all: Vec<usize> = data.films.keys().copied().collect();
+            let mut all: Vec<usize> = films.keys().copied().collect();
             all.sort_unstable();
             all
         };
@@ -116,8 +122,8 @@ pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>)
 
     HttpResponse::Ok().json(serde_json::json!({
         "done": false,
-        "a": data.films[&a],
-        "b": data.films[&b],
+        "a": films[&a],
+        "b": films[&b],
         "remaining": remaining.len(),
         "votes": votes,
     }))
@@ -127,8 +133,9 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
     if data.is_banned(&payload.user_id) {
         return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
     }
-    if !data.films.contains_key(&payload.winner_id)
-        || !data.films.contains_key(&payload.loser_id)
+    let films = data.films();
+    if !films.contains_key(&payload.winner_id)
+        || !films.contains_key(&payload.loser_id)
         || payload.winner_id == payload.loser_id
     {
         return HttpResponse::BadRequest().json(serde_json::json!({"error": "invalid film ids"}));
@@ -190,18 +197,13 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
     }
 
     data.save();
-
-    let winner = data
-        .films
-        .get(&payload.winner_id)
-        .map(|f| f.title.as_str())
-        .unwrap_or("?");
-    let loser = data
-        .films
-        .get(&payload.loser_id)
-        .map(|f| f.title.as_str())
-        .unwrap_or("?");
-    data.broadcast(&payload.user_id, format!("Voted: {winner} over {loser}"));
+    data.broadcast(
+        &payload.user_id,
+        LiveChange::Vote {
+            winner: payload.winner_id,
+            loser: payload.loser_id,
+        },
+    );
 
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
@@ -243,18 +245,13 @@ pub async fn unvote(data: web::Data<AppState>, payload: web::Json<UnvotePayload>
     }
 
     data.save();
-
-    let winner = data
-        .films
-        .get(&payload.winner_id)
-        .map(|f| f.title.as_str())
-        .unwrap_or("?");
-    let loser = data
-        .films
-        .get(&payload.loser_id)
-        .map(|f| f.title.as_str())
-        .unwrap_or("?");
-    data.broadcast(&payload.user_id, format!("Unvoted: {winner} vs {loser}"));
+    data.broadcast(
+        &payload.user_id,
+        LiveChange::Unvote {
+            winner: payload.winner_id,
+            loser: payload.loser_id,
+        },
+    );
 
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
@@ -282,13 +279,13 @@ pub async fn reset_votes(
 
     data.sync_vote_floor();
     data.save();
-    data.broadcast(&payload.user_id, "Reset all votes".into());
+    data.broadcast(&payload.user_id, LiveChange::Reset);
 
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
 pub async fn vote_stream(data: web::Data<AppState>) -> HttpResponse {
-    let mut rx = data.vote_tx.subscribe();
+    let mut rx = data.live_tx.subscribe();
     let stream = async_stream::stream! {
         // Periodic comment forces a write so Actix can detect dead clients
         // and drop their fd; without it, idle SSE connections leak forever.
@@ -344,7 +341,7 @@ pub async fn stats(data: web::Data<AppState>) -> HttpResponse {
         "total_users": total_users,
         "active_users": active_users,
         "total_votes": total_votes,
-        "total_films": data.films.len(),
+        "total_films": data.films().len(),
         "films_with_votes": films_with_votes,
     }))
 }
@@ -353,6 +350,7 @@ pub async fn user_matrix(
     data: web::Data<AppState>,
     query: web::Query<PairRequest>,
 ) -> HttpResponse {
+    let published = data.films();
     let users = data.users.lock().unwrap();
     let user = match users.get(&query.user_id) {
         Some(u) => u,
@@ -378,7 +376,7 @@ pub async fn user_matrix(
 
     let mut films: Vec<serde_json::Value> = film_ids
         .iter()
-        .filter_map(|&id| data.films.get(&id))
+        .filter_map(|&id| published.get(&id))
         .map(|f| serde_json::json!({"id": f.id, "title": f.title}))
         .collect();
     films.sort_by_key(|f| f["id"].as_u64().unwrap_or(0));
@@ -407,6 +405,7 @@ pub async fn user_matrix(
 }
 
 pub async fn global_matrix(data: web::Data<AppState>) -> HttpResponse {
+    let published = data.films();
     let ratings = data.bt_ratings.lock().unwrap();
 
     let mut film_ids: Vec<usize> = ratings
@@ -419,7 +418,7 @@ pub async fn global_matrix(data: web::Data<AppState>) -> HttpResponse {
     let films: Vec<serde_json::Value> = film_ids
         .iter()
         .filter_map(|&id| {
-            let film = data.films.get(&id)?;
+            let film = published.get(&id)?;
             let score = ratings.get(&id).map(|r| r.score).unwrap_or(1.0);
             Some(serde_json::json!({"id": film.id, "title": film.title, "score": score}))
         })
@@ -476,6 +475,7 @@ fn ranked_films<'a>(
 }
 
 pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
+    let films = data.films();
     let ratings = data.bt_ratings.lock().unwrap();
     let users = data.users.lock().unwrap();
     let banned = data.banned.lock().unwrap();
@@ -483,8 +483,9 @@ pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
 
     let board: Vec<serde_json::Value> = ranked
         .iter()
+        .filter(|r| films.contains_key(&r.film_id))
         .map(|r| {
-            let film = data.films.get(&r.film_id);
+            let film = films.get(&r.film_id);
             serde_json::json!({
                 "film_id": r.film_id,
                 "title": film.map(|f| f.title.as_str()).unwrap_or("?"),
@@ -535,12 +536,7 @@ pub async fn user_contributions(
     });
 
     for (i, entry) in entries.iter_mut().enumerate() {
-        let is_you = entry["is_you"].as_bool().unwrap_or(false);
-        entry["label"] = serde_json::json!(if is_you {
-            "You".to_string()
-        } else {
-            format!("Voter {}", i + 1)
-        });
+        entry["rank"] = serde_json::json!(i + 1);
         if let Some(obj) = entry.as_object_mut() {
             obj.remove("user_id");
         }
@@ -550,14 +546,19 @@ pub async fn user_contributions(
 }
 
 pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
+    let films = data.films();
     let ratings = data.bt_ratings.lock().unwrap();
     let users = data.users.lock().unwrap();
     let banned = data.banned.lock().unwrap();
     let ranked = ranked_films(&ratings, &users, &banned, data.min_votes, data.min_voters);
 
     let mut csv = String::from("Rank,Title,Team,City,Rating,Wins,Losses,Comparisons\n");
-    for (i, r) in ranked.iter().enumerate() {
-        let film = data.films.get(&r.film_id);
+    for (i, r) in ranked
+        .iter()
+        .filter(|r| films.contains_key(&r.film_id))
+        .enumerate()
+    {
+        let film = films.get(&r.film_id);
         let title = film.map(|f| f.title.as_str()).unwrap_or("?");
         let team = film.map(|f| f.team.as_str()).unwrap_or("?");
         let city = film.map(|f| f.city.as_str()).unwrap_or("?");

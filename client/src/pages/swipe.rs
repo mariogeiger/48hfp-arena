@@ -1,6 +1,7 @@
 use crate::api;
 use crate::components::poster::Poster;
-use crate::state::{AppState, Page, PairDoneReason, SiteConfig, capitalize};
+use crate::i18n::{or_default, say, t};
+use crate::state::{AppState, Page, PairDoneReason, SiteConfig};
 use leptos::prelude::*;
 use send_wrapper::SendWrapper;
 use std::cell::{Cell, RefCell};
@@ -370,9 +371,7 @@ pub fn SwipePage() -> impl IntoView {
     let has_image = cfg.has_image;
     let require_selection = cfg.require_selection;
     let duel_question = cfg.duel_question.clone();
-    let unknown_label = cfg.unknown_label.clone();
-    let noun = cfg.noun.clone();
-    let noun_plural = cfg.noun_plural.clone();
+    let unknown_label = or_default(&cfg.unknown_label, t().skip_unknown);
 
     // Set up gesture controller once, wrapped in SendWrapper for Leptos reactivity
     let ctrl = SendWrapper::new(Rc::new(RefCell::new(None::<SwipeController>)));
@@ -449,19 +448,19 @@ pub fn SwipePage() -> impl IntoView {
                         let vote_count = state.vote_count.get();
                         let (heading, msg, action_label): (String, String, String) = match reason {
                             PairDoneReason::NotEnough => (
-                                format!("Select {} first", noun_plural),
-                                format!("Go back and pick at least 2 {} you know.", noun_plural),
-                                format!("Select {}", capitalize(&noun_plural)),
+                                say(t().done_none_heading, &[]),
+                                say(t().done_none_text, &[]),
+                                say(t().nav_select, &[]),
                             ),
                             PairDoneReason::FocusDone => (
-                                "All done!".to_string(),
-                                format!("You've compared this {} against all others.", noun),
-                                "Compare All".to_string(),
+                                t().done_heading.to_string(),
+                                say(t().done_focus_text, &[]),
+                                t().done_focus_action.to_string(),
                             ),
                             PairDoneReason::AllDone => (
-                                "All done!".to_string(),
-                                format!("You've compared all possible pairs. ({} votes cast)", vote_count),
-                                "View Leaderboard".to_string(),
+                                t().done_heading.to_string(),
+                                say(t().done_all_text, &[("n", &vote_count)]),
+                                t().done_all_action.to_string(),
                             ),
                         };
                         let state2 = state.clone();
@@ -575,15 +574,15 @@ pub fn SwipePage() -> impl IntoView {
                                     </div>
                                 </div>
                                 <div class="swipe-buttons">
-                                    <button class="swipe-arrow-btn" title="Pick left"
+                                    <button class="swipe-arrow-btn" title=t().pick_left
                                         on:click=move |_| { if let Some(c) = ctrl_left.borrow().as_ref() { c.pick_left(); } }
                                     >"\u{2190}"</button>
-                                    <button class="swipe-arrow-btn" title="Pick right"
+                                    <button class="swipe-arrow-btn" title=t().pick_right
                                         on:click=move |_| { if let Some(c) = ctrl_right.borrow().as_ref() { c.pick_right(); } }
                                     >"\u{2192}"</button>
                                 </div>
                                 <div class="swipe-progress">
-                                    {move || format!("{} comparisons made", state.vote_count.get())}
+                                    {move || say(t().comparisons_made, &[("n", &state.vote_count.get())])}
                                 </div>
                                 <div class="swipe-bottom-actions">
                                     <button
@@ -591,13 +590,13 @@ pub fn SwipePage() -> impl IntoView {
                                         disabled=move || state.vote_history.get().is_empty()
                                         on:click=move |_| { if let Some(c) = ctrl_undo.borrow().as_ref() { c.undo(); } }
                                     >
-                                        "Undo"
+                                        {t().undo}
                                     </button>
                                     <button
                                         class="skip-btn"
                                         on:click=move |_| { if let Some(c) = ctrl_skip.borrow().as_ref() { c.skip(); } }
                                     >
-                                        "Skip"
+                                        {t().skip}
                                     </button>
                                 </div>
                             </div>
@@ -618,7 +617,7 @@ fn FocusPicker(films: Memo<Vec<versus_shared::Film>>) -> impl IntoView {
 
     view! {
         <div class="focus-picker">
-            <label for="focus-film">"Compare against:"</label>
+            <label for="focus-film">{t().compare_against}</label>
             <select
                 id="focus-film"
                 on:change={
@@ -637,7 +636,7 @@ fn FocusPicker(films: Memo<Vec<versus_shared::Film>>) -> impl IntoView {
                     state2.focus_film_id.get().map(|id| id.to_string()).unwrap_or_default()
                 }
             >
-                <option value="">"Random pairs"</option>
+                <option value="">{t().random_pairs}</option>
                 {move || {
                     films.get().into_iter().map(|film| {
                         view! {

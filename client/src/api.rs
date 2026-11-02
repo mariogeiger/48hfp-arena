@@ -5,7 +5,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-async fn fetch_json(
+pub async fn fetch_json(
     url: &str,
     opts: &web_sys::RequestInit,
 ) -> Result<(u16, serde_json::Value), String> {
@@ -25,7 +25,7 @@ async fn fetch_json(
     Ok((status, json))
 }
 
-fn check_banned(status: u16) {
+pub fn check_banned(status: u16) {
     if status == 403
         && let Some(state) = leptos::prelude::use_context::<AppState>()
     {
@@ -110,7 +110,10 @@ pub async fn boot(state: &AppState) {
     let hash = hash.trim_start_matches('#');
     let selected_count = state.selected_ids.get_untracked().len();
 
-    if !require_selection {
+    crate::wiki::load_proposals(state).await;
+    if let Some(id) = hash.strip_prefix("film/").and_then(|id| id.parse().ok()) {
+        state.open_sheet(Sheet::Item(id));
+    } else if !require_selection {
         // No select step — go straight to comparing (ignore any stale #select).
         let page = Page::from_str(hash).filter(|p| *p != Page::Select);
         state.navigate(page.unwrap_or(Page::Swipe));
@@ -237,6 +240,22 @@ pub async fn deselect_and_skip(state: &AppState, film_id: usize) {
     load_pair(state).await;
 }
 
+/// Fetch the films again, keeping them in leaderboard order.
+pub async fn reload_films(state: &AppState) {
+    if let Ok(json) = api_get("/api/films").await
+        && let Ok(mut films) = serde_json::from_value::<Vec<versus_shared::Film>>(json)
+    {
+        let board = state.board.get_untracked();
+        let rank_by_id: HashMap<usize, usize> = board
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (b.film_id, i))
+            .collect();
+        films.sort_by_key(|f| (rank_by_id.get(&f.id).copied().unwrap_or(usize::MAX), f.id));
+        state.films.set(films);
+    }
+}
+
 pub async fn load_board(state: &AppState) {
     if let Ok(data) = api_get("/api/leaderboard").await
         && let Ok(board) = serde_json::from_value::<Vec<LeaderboardEntry>>(data)
@@ -321,33 +340,27 @@ pub fn init_vote_stream(state: &AppState) {
     let state_msg = state.clone();
     let onmessage =
         Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |e: web_sys::MessageEvent| {
-            if let Some(data_str) = e.data().as_string()
-                && let Ok(event) = serde_json::from_str::<serde_json::Value>(&data_str)
-            {
-                let user_id = event
-                    .get("user_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let message = event
-                    .get("message")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-
-                let s = state_msg.clone();
-                wasm_bindgen_futures::spawn_local(async move {
-                    load_board(&s).await;
-                    let page = s.page.get_untracked();
-                    if page == Page::More {
-                        load_more(&s).await;
-                    }
-                });
-
-                if user_id != state_msg.user_id {
-                    state_msg.add_toast(html_escape(&message));
+            let Some(data) = e.data().as_string() else {
+                return;
+            };
+            let Ok(event) = serde_json::from_str::<versus_shared::LiveEvent>(&data) else {
+                return;
+            };
+            let s = state_msg.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let mut known = titles(&s);
+                match event.change {
+                    versus_shared::LiveChange::Film { .. } => crate::wiki::reload(&s).await,
+                    _ => load_board(&s).await,
                 }
-            }
+                if s.page.get_untracked() == Page::More {
+                    load_more(&s).await;
+                }
+                if event.user_id != s.user_id {
+                    known.extend(titles(&s));
+                    s.add_toast(live_message(&event.change, &known));
+                }
+            });
         });
     es.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
     onmessage.forget();
@@ -363,6 +376,53 @@ pub fn init_vote_stream(state: &AppState) {
     });
     es.set_onerror(Some(onerror.as_ref().unchecked_ref()));
     onerror.forget();
+}
+
+/// Every item's title, published or proposed.
+fn titles(state: &AppState) -> HashMap<usize, String> {
+    let mut titles: HashMap<usize, String> = state
+        .proposals
+        .get_untracked()
+        .into_iter()
+        .map(|p| (p.film.id, p.film.title))
+        .collect();
+    titles.extend(
+        state
+            .films
+            .get_untracked()
+            .into_iter()
+            .map(|f| (f.id, f.title)),
+    );
+    titles
+}
+
+/// What a change by someone else is called in the toast, as escaped HTML;
+/// `titles` names the items, including any the change removed.
+fn live_message(change: &versus_shared::LiveChange, titles: &HashMap<usize, String>) -> String {
+    use crate::i18n::{say, t};
+    use versus_shared::{FilmChange, LiveChange};
+    let title = |id: usize| titles.get(&id).cloned().unwrap_or_else(|| "?".into());
+    let message = match *change {
+        LiveChange::Vote { winner, loser } => say(
+            t().live_vote,
+            &[("a", &title(winner)), ("b", &title(loser))],
+        ),
+        LiveChange::Unvote { winner, loser } => say(
+            t().live_unvote,
+            &[("a", &title(winner)), ("b", &title(loser))],
+        ),
+        LiveChange::Reset => say(t().live_reset, &[]),
+        LiveChange::Film { film, change } => {
+            let template = match change {
+                FilmChange::Edited => t().live_edited,
+                FilmChange::Proposed => t().live_proposed,
+                FilmChange::Approved => t().live_approved,
+                FilmChange::Rejected => t().live_rejected,
+            };
+            say(template, &[("title", &title(film))])
+        }
+    };
+    html_escape(&message)
 }
 
 pub fn html_escape(s: &str) -> String {

@@ -1,4 +1,5 @@
-use crate::state::{AppState, Page, SiteConfig, capitalize};
+use crate::i18n::{say, t};
+use crate::state::{AppState, Page, SiteConfig};
 use leptos::prelude::*;
 
 #[component]
@@ -22,14 +23,13 @@ pub fn Nav() -> impl IntoView {
     let source_url = cfg.source_url.clone();
     let show_source = !source_url.is_empty();
     let require_selection = cfg.require_selection;
-    let select_label = format!("Select {}", capitalize(&cfg.noun_plural));
 
     view! {
         <nav class="nav">
-            {require_selection.then(|| nav_btn(select_label, Page::Select))}
-            {nav_btn("Compare".to_string(), Page::Swipe)}
-            {nav_btn("Leaderboard".to_string(), Page::Board)}
-            {nav_btn("More".to_string(), Page::More)}
+            {require_selection.then(|| nav_btn(say(t().nav_select, &[]), Page::Select))}
+            {nav_btn(t().nav_compare.to_string(), Page::Swipe)}
+            {nav_btn(t().nav_board.to_string(), Page::Board)}
+            {nav_btn(t().nav_more.to_string(), Page::More)}
             {show_source.then(|| view! {
                 <a
                     href=source_url

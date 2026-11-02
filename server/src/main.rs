@@ -1,9 +1,12 @@
 mod bt;
+mod catalog;
 mod config;
 mod csv;
 mod handlers;
 mod models;
 mod persistence;
+mod throttle;
+mod wiki;
 
 use actix_files::Files;
 use actix_web::{App, HttpServer, middleware, web};
@@ -12,9 +15,10 @@ use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::net::UnixListener;
 use tokio::sync::broadcast;
 
+use catalog::Catalog;
 use config::SiteConfig;
-use persistence::{AppState, load_db};
-use versus_shared::{Film, VoteEvent};
+use persistence::{AppState, load_banned, load_db};
+use versus_shared::{Film, LiveEvent};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -25,30 +29,29 @@ async fn main() -> std::io::Result<()> {
 
     let csv_content = std::fs::read_to_string(&cfg.data_csv)
         .unwrap_or_else(|e| panic!("Cannot read {}: {e}", cfg.data_csv));
-    let films: HashMap<usize, Film> = csv::parse_csv(&csv_content, &cfg)
-        .into_iter()
-        .map(|f| (f.id, f))
-        .collect();
-    let (ratings, users, votes_on_disk) = load_db(&films);
-    let (vote_tx, _) = broadcast::channel::<VoteEvent>(64);
-
+    let seed = csv::parse_csv(&csv_content, &cfg);
     log::info!(
         "Loaded {} items from {} for site '{}'",
-        films.len(),
+        seed.len(),
         cfg.data_csv,
         cfg.display_name
     );
+    let catalog = Catalog::load(seed, &cfg.edits_path, &load_banned());
+    let films: HashMap<usize, Film> = catalog.published();
+    let (ratings, users, votes_on_disk) = load_db(&films);
+    let (live_tx, _) = broadcast::channel::<LiveEvent>(64);
 
     let state = web::Data::new(AppState::new(
-        films,
+        catalog,
         ratings,
         users,
-        vote_tx,
+        live_tx,
         votes_on_disk,
         &cfg,
     ));
     // Config the browser needs, precomputed once and served at /api/config.
     let client_config = web::Data::new(cfg.client_json());
+    let columns = web::Data::new(cfg.columns.clone());
     let port = cfg.port;
     let client_dist = cfg.client_dist.clone();
 
@@ -66,10 +69,24 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(state.clone())
             .app_data(client_config.clone())
+            .app_data(columns.clone())
+            .app_data(web::PayloadConfig::new(wiki::MAX_UPLOAD))
             .wrap(middleware::Logger::new("%{r}a \"%r\" %s %b %Dms"))
+            // Revalidate everything (ETags make it cheap), so a deploy reaches
+            // every browser at once; uploads set their own, immutable, policy.
+            .wrap(middleware::DefaultHeaders::new().add(("Cache-Control", "no-cache")))
             .route("/health", web::get().to(handlers::health))
             .route("/api/config", web::get().to(handlers::config))
             .route("/api/films", web::get().to(handlers::get_films))
+            .route("/api/films", web::post().to(wiki::propose))
+            .route("/api/films.csv", web::get().to(wiki::films_csv))
+            .route("/api/films/{id}", web::post().to(wiki::edit))
+            .route("/api/films/{id}/revert", web::post().to(wiki::revert))
+            .route("/api/films/{id}/review", web::post().to(wiki::review))
+            .route("/api/films/{id}/history", web::get().to(wiki::history))
+            .route("/api/proposals", web::get().to(wiki::proposals))
+            .route("/api/uploads", web::post().to(wiki::upload))
+            .route("/uploads/{name}", web::get().to(wiki::uploaded))
             .route("/api/selection", web::post().to(handlers::set_selection))
             .route("/api/pair", web::get().to(handlers::get_pair))
             .route("/api/vote", web::post().to(handlers::vote))

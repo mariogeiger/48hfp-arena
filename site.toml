@@ -22,7 +22,6 @@ noun_plural   = "films"
 welcome_text  = "Please only vote on pairs of films you have actually watched. Your honest comparisons make the ranking meaningful for everyone."
 unknown_label = "Haven't seen it"
 link_label    = "Watch"
-suggest_repo  = "mariogeiger/48hfp-arena"
 source_url    = "https://github.com/mariogeiger/48hfp-arena"
 
 [columns]

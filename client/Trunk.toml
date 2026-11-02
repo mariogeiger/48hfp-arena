@@ -4,3 +4,7 @@ port = 8080
 [[proxy]]
 rewrite = "/api/"
 backend = "http://localhost:4848/api/"
+
+[[proxy]]
+rewrite = "/uploads/"
+backend = "http://localhost:4848/uploads/"
