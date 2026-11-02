@@ -100,18 +100,12 @@ pub fn BoardPage() -> impl IntoView {
                 )
             };
 
+            let by_id: HashMap<usize, &Film> = films.iter().map(|f| (f.id, f)).collect();
             let mut html: String = board
                 .iter()
+                .filter_map(|item| Some((item, by_id.get(&item.film_id)?)))
                 .enumerate()
-                .map(|(i, item)| {
-                    let film = Film {
-                        id: item.film_id,
-                        title: item.title.clone(),
-                        team: item.team.clone(),
-                        city: item.city.clone(),
-                        poster_url: item.poster_url.clone(),
-                        video_url: item.video_url.clone(),
-                    };
+                .map(|(i, (item, film))| {
                     let stats = format!(
                         r#"<div class="board-score">{}</div>
                         <div class="board-record">{}</div>"#,

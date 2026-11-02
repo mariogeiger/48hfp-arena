@@ -184,6 +184,7 @@ fn ItemView(film: Film, proposal: Option<Proposal>, mode: RwSignal<Mode>) -> imp
                 {review_block}
             </div>
         </div>
+        {(!film.synopsis.is_empty()).then(|| view! { <p class="item-synopsis">{film.synopsis.clone()}</p> })}
         {(!film.video_url.is_empty()).then(|| view! { <Video url=film.video_url.clone() link_label=link_label /> })}
         {move || error.get().map(|e| view! { <p class="form-error">{e}</p> })}
         {cfg.editable.then(|| view! {

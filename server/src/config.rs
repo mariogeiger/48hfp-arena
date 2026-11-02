@@ -27,6 +27,10 @@ pub struct Columns {
     /// External link column (→ `Film.video_url`).
     #[serde(default)]
     pub link: Option<String>,
+    /// Long text column, several lines (→ `Film.synopsis`). The column may be
+    /// absent from `data.csv` and filled in by editing.
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 /// Display names for the columns, by the same slots as `Columns`.
@@ -42,6 +46,8 @@ pub struct FieldLabels {
     pub image: Option<String>,
     #[serde(default)]
     pub link: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
@@ -92,6 +98,11 @@ pub struct SiteConfig {
     /// full set. Defaults to true (the 48hfp "films I've seen" behaviour).
     #[serde(default = "default_true")]
     pub require_selection: bool,
+    /// The page a visit opens on when its address names none: `select`,
+    /// `swipe`, `board` or `more`. Empty keeps the default (select until the
+    /// viewer has selected enough, then swipe).
+    #[serde(default)]
+    pub start_page: String,
     /// Whether every item starts selected, the viewer taking out those they
     /// don't know; else none does. Items added later join the selection too.
     #[serde(default)]
@@ -206,6 +217,7 @@ impl SiteConfig {
             "tagline": self.tagline,
             "has_image": self.has_image,
             "require_selection": self.require_selection,
+            "start_page": self.start_page,
             "select_by_default": self.select_by_default,
             "duel_question": self.duel_question,
             "noun": self.noun,
@@ -238,6 +250,7 @@ impl SiteConfig {
             "city": name(&l.detail, &c.detail),
             "poster_url": name(&l.image, &c.image),
             "video_url": name(&l.link, &c.link),
+            "synopsis": name(&l.description, &c.description),
         })
     }
 }

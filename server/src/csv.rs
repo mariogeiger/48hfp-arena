@@ -1,14 +1,15 @@
 use crate::config::SiteConfig;
 use versus_shared::Film;
 
-/// Split one CSV line into fields, honoring double-quoted fields (which may
-/// contain commas) and `""` escapes. Surrounding whitespace/quotes are trimmed
-/// by the caller via `clean`.
-fn split_csv_line(line: &str) -> Vec<String> {
-    let mut out = Vec::new();
+/// Split CSV text into records of fields, honoring double-quoted fields
+/// (which may hold commas and line breaks) and `""` escapes. Surrounding
+/// whitespace/quotes are trimmed by the caller via `clean`.
+fn records(content: &str) -> Vec<Vec<String>> {
+    let mut records = Vec::new();
+    let mut record = Vec::new();
     let mut cur = String::new();
     let mut in_quotes = false;
-    let mut chars = line.chars().peekable();
+    let mut chars = content.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
             '"' => {
@@ -19,12 +20,20 @@ fn split_csv_line(line: &str) -> Vec<String> {
                     in_quotes = !in_quotes;
                 }
             }
-            ',' if !in_quotes => out.push(std::mem::take(&mut cur)),
+            ',' if !in_quotes => record.push(std::mem::take(&mut cur)),
+            '\r' if !in_quotes => {}
+            '\n' if !in_quotes => {
+                record.push(std::mem::take(&mut cur));
+                records.push(std::mem::take(&mut record));
+            }
             _ => cur.push(c),
         }
     }
-    out.push(cur);
-    out
+    if !cur.is_empty() || !record.is_empty() {
+        record.push(cur);
+        records.push(record);
+    }
+    records
 }
 
 fn clean(s: &str) -> String {
@@ -41,16 +50,14 @@ fn apply_template(tpl: &str, headers: &[String], fields: &[String]) -> String {
 }
 
 /// Parse `data.csv` into items using the column mapping from the site config.
-/// The first line is the header row; columns are matched by name.
+/// The first record is the header row; columns are matched by name. An item's
+/// id is its position among the non-blank records.
 pub fn parse_csv(content: &str, cfg: &SiteConfig) -> Vec<Film> {
-    let mut lines = content.lines();
-    let Some(header_line) = lines.next() else {
+    let mut records = records(content).into_iter();
+    let Some(header) = records.next() else {
         return Vec::new();
     };
-    let headers: Vec<String> = split_csv_line(header_line)
-        .iter()
-        .map(|s| clean(s))
-        .collect();
+    let headers: Vec<String> = header.iter().map(|s| clean(s)).collect();
     let col = |name: &str| headers.iter().position(|h| h == name);
 
     let label_idx = col(&cfg.columns.label);
@@ -58,12 +65,12 @@ pub fn parse_csv(content: &str, cfg: &SiteConfig) -> Vec<Film> {
     let detail_idx = cfg.columns.detail.as_deref().and_then(col);
     let image_idx = cfg.columns.image.as_deref().and_then(col);
     let link_idx = cfg.columns.link.as_deref().and_then(col);
+    let description_idx = cfg.columns.description.as_deref().and_then(col);
 
-    lines
-        .filter(|l| !l.trim().is_empty())
+    records
+        .filter(|fields| !(fields.len() == 1 && fields[0].trim().is_empty()))
         .enumerate()
-        .filter_map(|(i, line)| {
-            let fields = split_csv_line(line);
+        .filter_map(|(i, fields)| {
             let get = |idx: Option<usize>| {
                 idx.and_then(|j| fields.get(j))
                     .map(|s| clean(s))
@@ -84,6 +91,7 @@ pub fn parse_csv(content: &str, cfg: &SiteConfig) -> Vec<Film> {
                 poster_url = apply_template(tpl, &headers, &fields);
             }
             let video_url = get(link_idx);
+            let synopsis = get(description_idx);
 
             Some(Film {
                 id: i + 1,
@@ -92,7 +100,26 @@ pub fn parse_csv(content: &str, cfg: &SiteConfig) -> Vec<Film> {
                 city,
                 poster_url,
                 video_url,
+                synopsis,
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quoted_fields_span_lines_and_blank_lines_take_no_id() {
+        let cfg: SiteConfig = toml::from_str(
+            "display_name = \"x\"\n[columns]\nlabel = \"Title\"\ndescription = \"Synopsis\"\n",
+        )
+        .unwrap();
+        let csv = "Title,Synopsis\r\nA,\"One, two.\nThree \"\"four\"\".\"\r\n\r\nB,\n";
+        let films = parse_csv(csv, &cfg);
+        assert_eq!(films.len(), 2);
+        assert_eq!(films[0].synopsis, "One, two.\nThree \"four\".");
+        assert_eq!((films[1].id, films[1].title.as_str()), (2, "B"));
+    }
 }

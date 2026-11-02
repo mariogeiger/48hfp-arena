@@ -39,6 +39,12 @@ fn changes(before: Option<&FilmFields>, after: &FilmFields) -> Vec<(String, Stri
             &before.video_url,
             &after.video_url,
         ),
+        (
+            &names.synopsis,
+            t().field_synopsis,
+            &before.synopsis,
+            &after.synopsis,
+        ),
     ];
     slots
         .into_iter()

@@ -15,6 +15,7 @@ use versus_shared::*;
 pub const MAX_UPLOAD: usize = 1 << 20;
 const MAX_TEXT: usize = 200;
 const MAX_URL: usize = 2000;
+const MAX_SYNOPSIS: usize = 2000;
 
 fn refuse(status: StatusCode, code: &str) -> HttpResponse {
     HttpResponse::build(status).json(serde_json::json!({ "error": code }))
@@ -61,13 +62,22 @@ fn admit(
 }
 
 /// Trimmed fields, or the code of the first rule they break: a title is
-/// required, text is short and single-line, links are http(s) or a poster
-/// uploaded here.
+/// required, text is short and single-line, a synopsis may span lines, links
+/// are http(s) or a poster uploaded here.
 pub fn validated(f: FilmFields) -> Result<FilmFields, &'static str> {
     let text = |s: String| -> Result<String, &'static str> {
         let s = s.trim().to_string();
         if s.chars().any(char::is_control) || s.chars().count() > MAX_TEXT {
             Err("bad_text")
+        } else {
+            Ok(s)
+        }
+    };
+    let synopsis = |s: String| -> Result<String, &'static str> {
+        let s = s.trim().replace("\r\n", "\n");
+        let stray = s.chars().any(|c| c.is_control() && c != '\n');
+        if stray || s.chars().count() > MAX_SYNOPSIS {
+            Err("bad_synopsis")
         } else {
             Ok(s)
         }
@@ -90,6 +100,7 @@ pub fn validated(f: FilmFields) -> Result<FilmFields, &'static str> {
         city: text(f.city)?,
         poster_url: link(f.poster_url, true)?,
         video_url: link(f.video_url, false)?,
+        synopsis: synopsis(f.synopsis)?,
     };
     if fields.title.is_empty() {
         return Err("title_required");
@@ -276,18 +287,19 @@ pub async fn uploaded(
 /// The published catalog in the shape of `data.csv`, under its headers.
 pub async fn films_csv(data: web::Data<AppState>, columns: web::Data<Columns>) -> HttpResponse {
     let quote = |s: &str| {
-        if s.contains([',', '"']) {
+        if s.contains([',', '"', '\n']) {
             format!("\"{}\"", s.replace('"', "\"\""))
         } else {
             s.to_string()
         }
     };
-    let slots: [(Option<&String>, fn(&Film) -> &str); 5] = [
+    let slots: [(Option<&String>, fn(&Film) -> &str); 6] = [
         (Some(&columns.label), |f| &f.title),
         (columns.sublabel.as_ref(), |f| &f.team),
         (columns.detail.as_ref(), |f| &f.city),
         (columns.image.as_ref(), |f| &f.poster_url),
         (columns.link.as_ref(), |f| &f.video_url),
+        (columns.description.as_ref(), |f| &f.synopsis),
     ];
     let slots: Vec<(&String, fn(&Film) -> &str)> = slots
         .into_iter()
@@ -336,5 +348,8 @@ mod tests {
         );
         assert_eq!(validated(fields("  ", "", "")), Err("title_required"));
         assert_eq!(validated(fields("a\nb", "", "")), Err("bad_text"));
+        let mut long = fields("T", "", "");
+        long.synopsis = " Une ligne.\r\nUne autre. ".into();
+        assert_eq!(validated(long).unwrap().synopsis, "Une ligne.\nUne autre.");
     }
 }

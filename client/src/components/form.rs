@@ -49,6 +49,7 @@ pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl In
     let city = RwSignal::new(initial.city);
     let poster = RwSignal::new(initial.poster_url);
     let video = RwSignal::new(initial.video_url);
+    let synopsis = RwSignal::new(initial.synopsis);
     let error = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
     let uploading = RwSignal::new(false);
@@ -90,6 +91,7 @@ pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl In
             city: city.get_untracked(),
             poster_url: poster.get_untracked(),
             video_url: video.get_untracked(),
+            synopsis: synopsis.get_untracked(),
         };
         if fields.title.trim().is_empty() {
             error.set(Some(t().error_title_required.into()));
@@ -151,6 +153,17 @@ pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl In
                 </div>
             })}
             {text(&names.video_url, t().field_video, video, true)}
+            {field_label(&names.synopsis, t().field_synopsis).map(|label| view! {
+                <label class="form-field">
+                    <span>{label}</span>
+                    <textarea
+                        rows="5"
+                        maxlength="2000"
+                        prop:value=move || synopsis.get()
+                        on:input=move |ev| synopsis.set(event_target_value(&ev))
+                    ></textarea>
+                </label>
+            })}
             {move || error.get().map(|e| view! { <p class="form-error">{e}</p> })}
             <div class="sheet-actions">
                 <button type="submit" class="primary" disabled=move || busy.get() || uploading.get()>

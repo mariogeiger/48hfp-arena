@@ -9,6 +9,8 @@ pub struct Film {
     pub poster_url: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub video_url: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub synopsis: String,
 }
 
 impl Film {
@@ -19,6 +21,7 @@ impl Film {
             city: self.city.clone(),
             poster_url: self.poster_url.clone(),
             video_url: self.video_url.clone(),
+            synopsis: self.synopsis.clone(),
         }
     }
 }
@@ -31,6 +34,10 @@ pub struct FilmFields {
     pub city: String,
     pub poster_url: String,
     pub video_url: String,
+    /// Several lines of free text; revisions written before it existed read
+    /// it as empty.
+    #[serde(default)]
+    pub synopsis: String,
 }
 
 impl FilmFields {
@@ -42,6 +49,7 @@ impl FilmFields {
             city: self.city,
             poster_url: self.poster_url,
             video_url: self.video_url,
+            synopsis: self.synopsis,
         }
     }
 }

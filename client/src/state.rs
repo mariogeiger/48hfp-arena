@@ -18,6 +18,8 @@ pub struct SiteConfig {
     #[serde(default)]
     pub select_by_default: bool,
     #[serde(default)]
+    pub start_page: String,
+    #[serde(default)]
     pub duel_question: String,
     #[serde(default = "default_noun")]
     pub noun: String,
@@ -53,6 +55,8 @@ pub struct FieldNames {
     pub city: Option<String>,
     pub poster_url: Option<String>,
     pub video_url: Option<String>,
+    #[serde(default)]
+    pub synopsis: Option<String>,
 }
 
 impl Default for FieldNames {
@@ -63,6 +67,7 @@ impl Default for FieldNames {
             city: Some(String::new()),
             poster_url: Some(String::new()),
             video_url: Some(String::new()),
+            synopsis: None,
         }
     }
 }
@@ -85,6 +90,7 @@ impl Default for SiteConfig {
             has_image: true,
             require_selection: true,
             select_by_default: false,
+            start_page: String::new(),
             duel_question: String::new(),
             noun: default_noun(),
             noun_plural: default_noun_plural(),
@@ -172,11 +178,6 @@ pub enum PairDoneReason {
 pub struct LeaderboardEntry {
     pub film_id: usize,
     pub title: String,
-    pub team: String,
-    pub city: String,
-    pub poster_url: String,
-    #[serde(default)]
-    pub video_url: String,
     pub rating: f64,
     pub wins: u32,
     pub losses: u32,

@@ -114,13 +114,13 @@ pub async fn boot(state: &AppState) {
     crate::wiki::load_proposals(state).await;
     if let Some(id) = hash.strip_prefix("film/").and_then(|id| id.parse().ok()) {
         state.open_sheet(Sheet::Item(id));
-    } else if !require_selection {
-        // No select step — go straight to comparing (ignore any stale #select).
-        let page = Page::from_str(hash).filter(|p| *p != Page::Select);
-        state.navigate(page.unwrap_or(Page::Swipe));
-    } else if let Some(page) = Page::from_str(hash) {
+    } else if let Some(page) = Page::from_str(hash)
+        .or_else(|| Page::from_str(&SiteConfig::get().start_page))
+        // Without a select step, a stale #select goes to comparing.
+        .filter(|p| require_selection || *p != Page::Select)
+    {
         state.navigate(page);
-    } else if selected_count == 0 {
+    } else if require_selection && selected_count == 0 {
         state.navigate(Page::Select);
     } else {
         state.navigate(Page::Swipe);
