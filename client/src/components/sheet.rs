@@ -181,6 +181,14 @@ fn ItemView(film: Film, proposal: Option<Proposal>, mode: RwSignal<Mode>) -> imp
             <div class="item-text">
                 <h2>{film.title.clone()}</h2>
                 <p class="item-meta">{meta}</p>
+                {cfg.editable.then(|| view! {
+                    <button class="edit-pill" on:click=move |_| mode.set(Mode::Edit)>
+                        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+                            <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.21a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+                        </svg>
+                        {t().sheet_edit}
+                    </button>
+                })}
                 {review_block}
             </div>
         </div>
@@ -188,10 +196,12 @@ fn ItemView(film: Film, proposal: Option<Proposal>, mode: RwSignal<Mode>) -> imp
         {(!film.video_url.is_empty()).then(|| view! { <Video url=film.video_url.clone() link_label=link_label /> })}
         {move || error.get().map(|e| view! { <p class="form-error">{e}</p> })}
         {cfg.editable.then(|| view! {
-            <div class="sheet-actions">
-                <button on:click=move |_| mode.set(Mode::Edit)>{t().sheet_edit}</button>
-                <button on:click=move |_| mode.set(Mode::History)>{t().sheet_history}</button>
-            </div>
+            <button class="history-link" on:click=move |_| mode.set(Mode::History)>
+                <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+                    <path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8H12z" />
+                </svg>
+                {t().sheet_history}
+            </button>
         })}
     }
 }

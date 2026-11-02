@@ -186,6 +186,45 @@
   margin-top: 4px;
   overflow-wrap: anywhere;
 }
+.edit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 14px 6px 11px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--accent-border);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.edit-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--accent-border);
+}
+.edit-pill:active {
+  transform: translateY(0);
+}
+.history-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 18px 0 0 auto;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.history-link:hover {
+  color: var(--purple);
+  text-decoration: underline;
+}
 .item-synopsis {
   margin-top: 14px;
   font-size: 14px;
