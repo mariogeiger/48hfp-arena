@@ -14,7 +14,6 @@ pub fn BoardPage() -> impl IntoView {
     let cfg = SiteConfig::get();
     let has_image = cfg.has_image;
     let editable = cfg.editable;
-    let link_label = or_default(&cfg.link_label, t().open_link);
     let unranked_banner = or_default(&cfg.unranked_banner, t().board_unranked);
     // Each item's random sort key, drawn once per page load so the unranked
     // order stays put while votes arrive.
@@ -80,22 +79,13 @@ pub fn BoardPage() -> impl IntoView {
                 } else {
                     format!(" &middot; {}", api::html_escape(&film.city))
                 };
-                let video = if film.video_url.is_empty() {
-                    String::new()
-                } else {
-                    format!(
-                        r#" &middot; <a href="{}" target="_blank" class="board-video">{}</a>"#,
-                        api::html_escape(&film.video_url),
-                        api::html_escape(&link_label)
-                    )
-                };
                 format!(
                     r#"<div class="{}" data-film-id="{}">
                         <div class="board-rank">{}</div>
                         {}
                         <div class="board-info">
                             <div class="board-title">{}</div>
-                            <div class="board-meta">{}{}{}</div>
+                            <div class="board-meta">{}{}</div>
                         </div>
                         <div class="board-stats">{}</div>
                     </div>"#,
@@ -106,7 +96,6 @@ pub fn BoardPage() -> impl IntoView {
                     api::html_escape(&film.title),
                     api::html_escape(&film.team),
                     city,
-                    video,
                     stats,
                 )
             };
@@ -251,7 +240,7 @@ pub fn BoardPage() -> impl IntoView {
         }
     });
 
-    // A tap on an item opens its sheet, unless it was on the item's link.
+    // A tap on an item opens its sheet, which plays its video.
     let open_item = move |ev: web_sys::MouseEvent| {
         let Some(target) = ev
             .target()
@@ -259,9 +248,6 @@ pub fn BoardPage() -> impl IntoView {
         else {
             return;
         };
-        if target.closest("a").ok().flatten().is_some() {
-            return;
-        }
         let id = target
             .closest("[data-film-id]")
             .ok()
