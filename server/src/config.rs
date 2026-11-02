@@ -95,6 +95,10 @@ pub struct SiteConfig {
     /// Label for the board's external link (the `link` column), e.g. "Watch".
     #[serde(default = "default_link_label")]
     pub link_label: String,
+    /// Banner above the board's items that lack the votes to be ranked, which
+    /// it shows in random order. Empty lets the client say it in English.
+    #[serde(default)]
+    pub unranked_banner: String,
     /// GitHub `owner/repo` for the "suggest a correction" form. Empty hides it.
     #[serde(default)]
     pub suggest_repo: String,
@@ -166,6 +170,7 @@ impl SiteConfig {
             "welcome_text": self.welcome_text,
             "unknown_label": self.unknown_label,
             "link_label": self.link_label,
+            "unranked_banner": self.unranked_banner,
             "suggest_repo": self.suggest_repo,
             "source_url": self.source_url,
         })

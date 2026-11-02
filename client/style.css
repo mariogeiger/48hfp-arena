@@ -568,6 +568,18 @@ body.swipe-active {
   background: var(--rank-3-bg);
   color: var(--rank-3);
 }
+.board-item.board-unranked .board-rank {
+  background: var(--card-alt);
+  color: var(--text-muted);
+}
+.board-banner {
+  margin: 16px 0 4px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--text);
+  font-size: 13px;
+}
 .board-info {
   flex: 1;
   min-width: 0;
@@ -595,15 +607,6 @@ body.swipe-active {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 2px;
-}
-.board-empty {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--text-muted);
-}
-.board-empty h3 {
-  color: var(--text);
-  margin-bottom: 8px;
 }
 .board-video {
   color: var(--purple);

@@ -2,7 +2,8 @@ use crate::api;
 use crate::components::poster;
 use crate::state::{AppState, SiteConfig};
 use leptos::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use versus_shared::Film;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
@@ -12,7 +13,17 @@ pub fn BoardPage() -> impl IntoView {
     let cfg = SiteConfig::get();
     let has_image = cfg.has_image;
     let link_label = cfg.link_label.clone();
-    let noun_plural = cfg.noun_plural.clone();
+    let unranked_banner = if cfg.unranked_banner.is_empty() {
+        format!(
+            "Not enough votes yet to rank these {}: they are shown in random order.",
+            cfg.noun_plural
+        )
+    } else {
+        cfg.unranked_banner.clone()
+    };
+    // Each item's random sort key, drawn once per page load so the unranked
+    // order stays put while votes arrive.
+    let shuffle_keys = StoredValue::new(HashMap::<usize, f64>::new());
 
     // Render board imperatively for FLIP animation
     // Track both board data AND page — only render+animate when board page is active
@@ -20,6 +31,7 @@ pub fn BoardPage() -> impl IntoView {
         let state = state.clone();
         move || {
             let board = state.board.get();
+            let films = state.films.get();
             let page = state.page.get();
             if page != crate::state::Page::Board {
                 return; // Don't render/animate while hidden — wait until user navigates here
@@ -46,67 +58,95 @@ pub fn BoardPage() -> impl IntoView {
                 }
             }
 
-            // Render new DOM
-            if board.is_empty() {
-                list.set_inner_html(&format!(
-                    r#"<div class="board-empty"><h3>No votes yet</h3><p>Start comparing {} to build the leaderboard!</p></div>"#,
-                    noun_plural
-                ));
-                return;
-            }
+            // Render new DOM: the ranked items, then those without enough votes
+            // in this page load's random order, under a banner saying so.
+            let ranked: HashSet<usize> = board.iter().map(|item| item.film_id).collect();
+            let mut unranked: Vec<&Film> = films
+                .iter()
+                .filter(|film| !ranked.contains(&film.id))
+                .collect();
+            shuffle_keys.update_value(|keys| {
+                for film in &unranked {
+                    keys.entry(film.id).or_insert_with(js_sys::Math::random);
+                }
+            });
+            shuffle_keys.with_value(|keys| {
+                unranked.sort_by(|a, b| keys[&a.id].total_cmp(&keys[&b.id]));
+            });
 
-            let html: String = board
+            let item_html = |class: &str, rank: &str, film: &Film, stats: &str| {
+                let poster = if has_image {
+                    poster::poster_html(&film.poster_url)
+                } else {
+                    String::new()
+                };
+                let city = if film.city.is_empty() {
+                    String::new()
+                } else {
+                    format!(" &middot; {}", api::html_escape(&film.city))
+                };
+                let video = if film.video_url.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        r#" &middot; <a href="{}" target="_blank" class="board-video">{}</a>"#,
+                        api::html_escape(&film.video_url),
+                        api::html_escape(&link_label)
+                    )
+                };
+                format!(
+                    r#"<div class="{}" data-film-id="{}">
+                        <div class="board-rank">{}</div>
+                        {}
+                        <div class="board-info">
+                            <div class="board-title">{}</div>
+                            <div class="board-meta">{}{}{}</div>
+                        </div>
+                        <div class="board-stats">{}</div>
+                    </div>"#,
+                    class,
+                    film.id,
+                    rank,
+                    poster,
+                    api::html_escape(&film.title),
+                    api::html_escape(&film.team),
+                    city,
+                    video,
+                    stats,
+                )
+            };
+
+            let mut html: String = board
                 .iter()
                 .enumerate()
                 .map(|(i, item)| {
-                    let poster = if has_image {
-                        poster::poster_html(&item.poster_url)
-                    } else {
-                        String::new()
+                    let film = Film {
+                        id: item.film_id,
+                        title: item.title.clone(),
+                        team: item.team.clone(),
+                        city: item.city.clone(),
+                        poster_url: item.poster_url.clone(),
+                        video_url: item.video_url.clone(),
                     };
-                    let title = api::html_escape(&item.title);
-                    let team = api::html_escape(&item.team);
-                    let city = if item.city.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" &middot; {}", api::html_escape(&item.city))
-                    };
-                    let video = if item.video_url.is_empty() {
-                        String::new()
-                    } else {
-                        format!(
-                            r#" &middot; <a href="{}" target="_blank" class="board-video">{}</a>"#,
-                            api::html_escape(&item.video_url),
-                            api::html_escape(&link_label)
-                        )
-                    };
-                    let rating = item.rating.round() as i64;
-                    format!(
-                        r#"<div class="board-item" data-film-id="{}">
-                            <div class="board-rank">{}</div>
-                            {}
-                            <div class="board-info">
-                                <div class="board-title">{}</div>
-                                <div class="board-meta">{}{}{}</div>
-                            </div>
-                            <div class="board-stats">
-                                <div class="board-score">{}</div>
-                                <div class="board-record">{}W - {}L</div>
-                            </div>
-                        </div>"#,
-                        item.film_id,
-                        i + 1,
-                        poster,
-                        title,
-                        team,
-                        city,
-                        video,
-                        rating,
+                    let stats = format!(
+                        r#"<div class="board-score">{}</div>
+                        <div class="board-record">{}W - {}L</div>"#,
+                        item.rating.round() as i64,
                         item.wins,
                         item.losses,
-                    )
+                    );
+                    item_html("board-item", &(i + 1).to_string(), &film, &stats)
                 })
                 .collect();
+            if !unranked.is_empty() {
+                html.push_str(&format!(
+                    r#"<div class="board-banner">{}</div>"#,
+                    api::html_escape(&unranked_banner)
+                ));
+                for film in &unranked {
+                    html.push_str(&item_html("board-item board-unranked", "?", film, ""));
+                }
+            }
 
             list.set_inner_html(&html);
 

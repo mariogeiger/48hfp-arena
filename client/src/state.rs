@@ -27,6 +27,8 @@ pub struct SiteConfig {
     #[serde(default)]
     pub link_label: String,
     #[serde(default)]
+    pub unranked_banner: String,
+    #[serde(default)]
     pub suggest_repo: String,
     #[serde(default)]
     pub source_url: String,
@@ -52,6 +54,7 @@ impl Default for SiteConfig {
                 .into(),
             unknown_label: "Skip this one".into(),
             link_label: "Open".into(),
+            unranked_banner: String::new(),
             suggest_repo: String::new(),
             source_url: String::new(),
         }
