@@ -107,8 +107,40 @@ pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>)
         return HttpResponse::Ok().json(serde_json::json!({"done": true, "votes": votes}));
     }
 
+    let avoided = parse_pair_list(&query.avoid);
+    let fresh: Vec<(usize, usize)> = remaining
+        .iter()
+        .copied()
+        .filter(|pair| !avoided.contains(pair))
+        .collect();
+    let (a, b) = if fresh.is_empty() {
+        // Only pairs passed on lately are left: the one passed on longest ago.
+        *avoided
+            .iter()
+            .find(|pair| remaining.contains(pair))
+            .expect("every pair left was passed on")
+    } else {
+        draw_informative(&data, &seen, &fresh)
+    };
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "done": false,
+        "a": films[&a],
+        "b": films[&b],
+        "remaining": remaining.len(),
+        "votes": votes,
+    }))
+}
+
+/// One of `candidates`, drawn the likelier the more its duel would tell
+/// the ranking (by Fisher information) among the items `seen`.
+fn draw_informative(
+    data: &AppState,
+    seen: &[usize],
+    candidates: &[(usize, usize)],
+) -> (usize, usize) {
     let ratings = data.bt_ratings.lock().unwrap();
-    let scores = fisher_pair_scores(&ratings, &seen, &remaining);
+    let scores = fisher_pair_scores(&ratings, seen, candidates);
     drop(ratings);
 
     let max_score = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -122,15 +154,7 @@ pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>)
 
     let mut rng = rand::thread_rng();
     let dist = WeightedIndex::new(&weights).unwrap();
-    let (a, b) = remaining[rng.sample(&dist)];
-
-    HttpResponse::Ok().json(serde_json::json!({
-        "done": false,
-        "a": films[&a],
-        "b": films[&b],
-        "remaining": remaining.len(),
-        "votes": votes,
-    }))
+    candidates[rng.sample(&dist)]
 }
 
 pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) -> HttpResponse {

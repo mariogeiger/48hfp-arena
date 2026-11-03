@@ -2,7 +2,8 @@
 //! prefer, drags towards it or presses ← or →, or calls it a tie with the
 //! button between them or ↑. The winner glows and bursts into confetti, the
 //! loser fades, a tie lights both; the next pair slides in. Below sit undo,
-//! skip, and the votes cast with how far the viewer is through their duels.
+//! skip, which keeps the pair away for ten duels, and the votes cast with
+//! how far the viewer is through their duels.
 
 use crate::api;
 use crate::components::card::CardFace;
@@ -156,7 +157,7 @@ impl Moves {
             return;
         }
         self.play(Fate::Skipped, 260, |state| async move {
-            api::load_pair(&state).await
+            api::pass_pair(&state).await
         });
     }
 

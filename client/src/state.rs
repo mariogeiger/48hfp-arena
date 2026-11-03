@@ -182,6 +182,14 @@ pub struct FilmPair {
     pub b: Film,
 }
 
+/// A pair the viewer passed on in the duels, which comes back only once
+/// they voted on `votes_left` other duels, or when no other pair is left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PassedPair {
+    pub pair: (usize, usize),
+    pub votes_left: usize,
+}
+
 /// A vote cast in the duels: the pair as it was shown, and what it came to.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoteRecord {
@@ -377,6 +385,8 @@ pub struct AppState {
     /// The duels left among the viewer's items, as of the last pair drawn.
     pub pairs_left: RwSignal<Option<usize>>,
     pub vote_history: RwSignal<Vec<VoteRecord>>,
+    /// The pairs passed on lately, oldest first.
+    pub passed: StoredValue<Vec<PassedPair>>,
     pub focus_film_id: RwSignal<Option<usize>>,
 
     pub board: RwSignal<Vec<LeaderboardEntry>>,
@@ -459,6 +469,7 @@ impl AppState {
             vote_count: RwSignal::new(0),
             pairs_left: RwSignal::new(None),
             vote_history: RwSignal::new(Vec::new()),
+            passed: StoredValue::new(Vec::new()),
             focus_film_id: RwSignal::new(None),
 
             board: RwSignal::new(Vec::new()),

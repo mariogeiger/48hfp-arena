@@ -5,7 +5,7 @@
 use crate::state::*;
 use leptos::prelude::*;
 use std::collections::HashMap;
-use versus_shared::Outcome;
+use versus_shared::{Outcome, canonical_pair, pair_list};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -185,6 +185,12 @@ pub async fn load_pair(state: &AppState) {
     if let Some(fid) = focus {
         url.push_str(&format!("&focus_film={}", fid));
     }
+    let avoid = state
+        .passed
+        .with_value(|passed| pair_list(passed.iter().map(|p| p.pair)));
+    if !avoid.is_empty() {
+        url.push_str(&format!("&avoid={avoid}"));
+    }
 
     let Ok(data) = api_get(&url).await else {
         return;
@@ -232,9 +238,36 @@ fn vote_body(state: &AppState, a: usize, b: usize, outcome: Outcome) -> serde_js
     })
 }
 
+/// The duels a pair passed on waits before it comes back.
+const PASS_VOTES: usize = 10;
+
+/// Pass on the pair shown, which waits `PASS_VOTES` votes on other duels
+/// before it comes back, then draw the next.
+pub async fn pass_pair(state: &AppState) {
+    if let Some(shown) = state.pair.get_untracked() {
+        let pair = canonical_pair(shown.a.id, shown.b.id);
+        state.passed.update_value(|passed| {
+            passed.retain(|p| p.pair != pair);
+            passed.push(PassedPair {
+                pair,
+                votes_left: PASS_VOTES,
+            });
+        });
+    }
+    load_pair(state).await;
+}
+
 /// Vote `outcome` on the pair shown, `a` against `b`, then draw the next.
+/// Each pair passed on waits one vote fewer.
 pub async fn cast_vote(state: &AppState, a: usize, b: usize, outcome: Outcome) {
     let _ = api_post("/api/vote", &vote_body(state, a, b, outcome)).await;
+    let pair = canonical_pair(a, b);
+    state.passed.update_value(|passed| {
+        passed.retain_mut(|p| {
+            p.votes_left = p.votes_left.saturating_sub(1);
+            p.votes_left > 0 && p.pair != pair
+        })
+    });
     state
         .vote_history
         .update(|h| h.push(VoteRecord { a, b, outcome }));

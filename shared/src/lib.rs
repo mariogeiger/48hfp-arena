@@ -184,6 +184,10 @@ impl TryFrom<KeptOutcome> for Outcome {
 pub struct PairRequest {
     pub user_id: String,
     pub focus_film: Option<usize>,
+    /// The pairs the viewer passed on lately, oldest first, as `pair_list`
+    /// writes them: drawn only when no other pair is left.
+    #[serde(default)]
+    pub avoid: String,
 }
 
 #[derive(Deserialize)]
@@ -298,9 +302,36 @@ pub fn parse_pair_key(key: &str) -> Option<(usize, usize)> {
     Some((a.parse().ok()?, b.parse().ok()?))
 }
 
+/// Pairs in order, as their keys joined by dots, which an address keeps
+/// as they are.
+pub fn pair_list(pairs: impl IntoIterator<Item = (usize, usize)>) -> String {
+    pairs
+        .into_iter()
+        .map(|(a, b)| pair_key(a, b))
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// The pairs `pair_list` wrote, each canonical, skipping what is no pair.
+pub fn parse_pair_list(list: &str) -> Vec<(usize, usize)> {
+    list.split('.')
+        .filter_map(parse_pair_key)
+        .map(|(a, b)| canonical_pair(a, b))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pair_lists_read_back_in_order_and_canonical() {
+        let list = pair_list([(3, 1), (2, 5)]);
+        assert_eq!(list, "1,3.2,5");
+        assert_eq!(parse_pair_list(&list), vec![(1, 3), (2, 5)]);
+        assert_eq!(parse_pair_list(""), vec![]);
+        assert_eq!(parse_pair_list("4,2.x"), vec![(2, 4)]);
+    }
 
     #[test]
     fn outcomes_keep_as_a_winner_or_the_word_tie() {
