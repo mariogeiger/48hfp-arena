@@ -32,13 +32,6 @@ impl Side {
             Side::B => "card-b",
         }
     }
-
-    fn other(self) -> Side {
-        match self {
-            Side::A => Side::B,
-            Side::B => Side::A,
-        }
-    }
 }
 
 fn card(side: Side) -> Option<web_sys::HtmlElement> {
@@ -49,20 +42,38 @@ fn card(side: Side) -> Option<web_sys::HtmlElement> {
         .ok()
 }
 
-fn mark(side: Side, class: &str) {
-    if let Some(card) = card(side) {
-        let _ = card.style().remove_property("transform");
-        let _ = card.style().remove_property("opacity");
-        let _ = card.class_list().add_1(class);
+/// What became of the duel in play, which its cards show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fate {
+    Picked(Side),
+    Skipped,
+    Gone(Side),
+}
+
+impl Fate {
+    /// The class the card on `side` takes, after a space.
+    fn class(self, side: Side) -> &'static str {
+        match self {
+            Fate::Picked(s) if s == side => " won",
+            Fate::Picked(_) => " lost",
+            Fate::Skipped => " skipped",
+            Fate::Gone(s) if s == side => " gone",
+            Fate::Gone(_) => "",
+        }
     }
 }
 
 /// The moves of the duel in play. One runs at a time: `busy` holds the
-/// others back until the next pair is in.
+/// others back until it is over.
 #[derive(Clone)]
 struct Moves {
     state: AppState,
     busy: RwSignal<bool>,
+    /// The number of the duel in play: each pair drawn is a duel of its own,
+    /// even the same pair drawn again.
+    draw: StoredValue<u64>,
+    /// What became of the duel numbered so, until the move is over.
+    fate: RwSignal<Option<(u64, Fate)>>,
 }
 
 impl Moves {
@@ -72,6 +83,26 @@ impl Moves {
         }
         self.busy.set(true);
         true
+    }
+
+    /// Show `fate` on the cards and, once they have played it out, `then`.
+    /// Should `then` draw no other duel, as when the network fails, the
+    /// cards come back as they were.
+    fn play<F>(&self, fate: Fate, millis: u32, then: impl FnOnce(AppState) -> F + 'static)
+    where
+        F: std::future::Future<Output = ()> + 'static,
+    {
+        self.unlean();
+        self.fate.set(Some((self.draw.get_value(), fate)));
+        let (state, busy, fates) = (self.state.clone(), self.busy, self.fate);
+        Timeout::new(millis, move || {
+            wasm_bindgen_futures::spawn_local(async move {
+                then(state).await;
+                fates.set(None);
+                busy.set(false);
+            });
+        })
+        .forget();
     }
 
     fn pick(&self, side: Side) {
@@ -85,36 +116,22 @@ impl Moves {
             Side::A => (pair.a.id, pair.b.id),
             Side::B => (pair.b.id, pair.a.id),
         };
-        mark(side, "won");
-        mark(side.other(), "lost");
         confetti::tap();
         if let Some((x, y)) = confetti::centre_of(side.card()) {
             confetti::burst(x, y, 18);
         }
-        let (state, busy) = (self.state.clone(), self.busy);
-        Timeout::new(420, move || {
-            wasm_bindgen_futures::spawn_local(async move {
-                api::cast_vote(&state, winner, loser).await;
-                busy.set(false);
-            });
-        })
-        .forget();
+        self.play(Fate::Picked(side), 420, move |state| async move {
+            api::cast_vote(&state, winner, loser).await
+        });
     }
 
     fn skip(&self) {
         if !self.start() {
             return;
         }
-        mark(Side::A, "skipped");
-        mark(Side::B, "skipped");
-        let (state, busy) = (self.state.clone(), self.busy);
-        Timeout::new(260, move || {
-            wasm_bindgen_futures::spawn_local(async move {
-                api::load_pair(&state).await;
-                busy.set(false);
-            });
-        })
-        .forget();
+        self.play(Fate::Skipped, 260, |state| async move {
+            api::load_pair(&state).await
+        });
     }
 
     fn undo(&self) {
@@ -122,16 +139,9 @@ impl Moves {
             return;
         }
         self.busy.set(true);
-        mark(Side::A, "skipped");
-        mark(Side::B, "skipped");
-        let (state, busy) = (self.state.clone(), self.busy);
-        Timeout::new(200, move || {
-            wasm_bindgen_futures::spawn_local(async move {
-                api::undo_vote(&state).await;
-                busy.set(false);
-            });
-        })
-        .forget();
+        self.play(Fate::Skipped, 200, |state| async move {
+            api::undo_vote(&state).await
+        });
     }
 
     /// The viewer does not know the item on `side`: out of their selection.
@@ -146,15 +156,9 @@ impl Moves {
             Side::A => pair.a.id,
             Side::B => pair.b.id,
         };
-        mark(side, "gone");
-        let (state, busy) = (self.state.clone(), self.busy);
-        Timeout::new(320, move || {
-            wasm_bindgen_futures::spawn_local(async move {
-                api::deselect_and_skip(&state, id).await;
-                busy.set(false);
-            });
-        })
-        .forget();
+        self.play(Fate::Gone(side), 320, move |state| async move {
+            api::deselect_and_skip(&state, id).await
+        });
     }
 
     /// The cards follow a drag: the one dragged towards leans in.
@@ -203,19 +207,43 @@ pub fn DuelsPage() -> impl IntoView {
     let moves = Moves {
         state: state.clone(),
         busy: RwSignal::new(false),
+        draw: StoredValue::new(0),
+        fate: RwSignal::new(None),
     };
     install_keys(&moves);
     celebrate_milestones(&state);
 
     let selects = SiteConfig::get().require_selection;
+    // Each pair drawn gets cards of its own, which slide in, whatever
+    // became of the last ones.
+    let (pair, draw) = (state.pair, moves.draw);
+    let drawn = move || {
+        let pair = pair.get();
+        draw.update_value(|n| *n += 1);
+        pair.map(|pair| (draw.get_value(), pair))
+    };
+    let shown = {
+        let state = state.clone();
+        Memo::new(move |_| (state.pair_status.get(), state.pair.with(Option::is_some)))
+    };
     let stage = {
-        let (state, moves) = (state.clone(), moves.clone());
-        move || match (state.pair_status.get(), state.pair.get()) {
+        let moves = moves.clone();
+        move || match shown.get() {
             (Some(reason), _) => view! { <Done reason=reason /> }.into_any(),
-            (None, Some(pair)) => {
-                view! { <Arena a=pair.a b=pair.b moves=moves.clone() /> }.into_any()
+            (None, true) => {
+                let moves = moves.clone();
+                view! {
+                    <For
+                        each=drawn
+                        key=|(draw, _)| *draw
+                        children=move |(draw, pair)| {
+                            view! { <Arena draw=draw a=pair.a b=pair.b moves=moves.clone() /> }
+                        }
+                    />
+                }
+                .into_any()
             }
-            (None, None) => view! {
+            (None, false) => view! {
                 <div class="arena arena-loading" aria-hidden="true">
                     <div class="duel-card ghost"></div>
                     <div class="duel-card ghost"></div>
@@ -257,7 +285,7 @@ pub fn DuelsPage() -> impl IntoView {
 }
 
 #[component]
-fn Arena(a: versus_shared::Film, b: versus_shared::Film, moves: Moves) -> impl IntoView {
+fn Arena(draw: u64, a: versus_shared::Film, b: versus_shared::Film, moves: Moves) -> impl IntoView {
     let cfg = SiteConfig::get();
     let question = cfg.duel_question.clone();
     let unseen_label = or_default(&cfg.unknown_label, t().skip_unknown);
@@ -273,9 +301,21 @@ fn Arena(a: versus_shared::Film, b: versus_shared::Film, moves: Moves) -> impl I
             let pick = moves.clone();
             let unseen = moves.clone();
             let unseen_label = unseen_label.clone();
+            let fate = moves.fate;
+            let class = move || {
+                let base = match side {
+                    Side::A => "duel-card side-a",
+                    Side::B => "duel-card side-b",
+                };
+                let fate = fate
+                    .get()
+                    .filter(|(of, _)| *of == draw)
+                    .map_or("", |(_, fate)| fate.class(side));
+                format!("{base}{fate}")
+            };
             view! {
                 <div
-                    class=match side { Side::A => "duel-card side-a", Side::B => "duel-card side-b" }
+                    class=class
                     id=side.card()
                     role="button"
                     on:click=move |_| {
