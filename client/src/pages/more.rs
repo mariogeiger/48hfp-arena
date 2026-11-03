@@ -1,5 +1,6 @@
 //! The More page: how the ranking works, the voting stats, the reset of
-//! one's votes, everyone's contributions and the vote matrices.
+//! one's votes, continuing on another device, everyone's contributions and
+//! the vote matrices.
 
 use crate::api;
 use crate::i18n::{fill, say, t};
@@ -37,6 +38,7 @@ pub fn MorePage() -> impl IntoView {
             </button>
         </div>
 
+        <crate::components::identity::SessionSection />
         <ContributionsSection />
         <crate::pages::matrices::MatrixSections />
     }

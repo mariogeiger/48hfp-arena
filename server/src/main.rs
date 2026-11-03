@@ -3,6 +3,7 @@ mod catalog;
 mod config;
 mod csv;
 mod handlers;
+mod identity;
 mod models;
 mod persistence;
 mod throttle;
@@ -87,6 +88,9 @@ async fn main() -> std::io::Result<()> {
             .route("/api/proposals", web::get().to(wiki::proposals))
             .route("/api/uploads", web::post().to(wiki::upload))
             .route("/uploads/{name}", web::get().to(wiki::uploaded))
+            .route("/api/identity", web::get().to(identity::identity))
+            .route("/api/identity/name", web::post().to(identity::set_name))
+            .route("/api/identity/merge", web::post().to(identity::merge))
             .route("/api/selection", web::post().to(handlers::set_selection))
             .route("/api/pair", web::get().to(handlers::get_pair))
             .route("/api/vote", web::post().to(handlers::vote))

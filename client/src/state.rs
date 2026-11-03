@@ -267,8 +267,25 @@ pub struct AppState {
     pub proposals: RwSignal<Vec<Proposal>>,
     /// The item sheet open over the page, if any.
     pub sheet: RwSignal<Option<Sheet>>,
+    /// The duel open over the matrices, if any: the row item, then the column one.
+    pub duel: RwSignal<Option<(usize, usize)>>,
+
+    /// The private name of this identity, once known.
+    pub user_name: RwSignal<Option<String>>,
+    /// Another identity a link offers to continue, awaiting the viewer's answer.
+    pub handoff: RwSignal<Option<Handoff>>,
 
     pub user_id: String,
+}
+
+/// An identity a `#continue/<uuid>` link offers, as the server knows it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Handoff {
+    pub user_id: String,
+    pub name: Option<String>,
+    pub votes: usize,
+    /// The votes of this device's identity, which would fold into it.
+    pub own_votes: usize,
 }
 
 /// What the item sheet shows: an item, published or proposed, or the form
@@ -284,12 +301,12 @@ impl AppState {
         let storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
 
         let user_id = storage
-            .get_item("filmrank_uid")
+            .get_item(USER_ID_KEY)
             .ok()
             .flatten()
             .unwrap_or_else(|| {
                 let id = gen_uuid_v4();
-                storage.set_item("filmrank_uid", &id).unwrap();
+                storage.set_item(USER_ID_KEY, &id).unwrap();
                 id
             });
 
@@ -323,6 +340,10 @@ impl AppState {
 
             proposals: RwSignal::new(Vec::new()),
             sheet: RwSignal::new(None),
+            duel: RwSignal::new(None),
+
+            user_name: RwSignal::new(None),
+            handoff: RwSignal::new(None),
 
             user_id,
         }
@@ -366,7 +387,13 @@ impl AppState {
             .hash()
             .unwrap_or_default();
         let hash = hash.trim_start_matches('#');
-        if let Some(id) = hash.strip_prefix("film/").and_then(|id| id.parse().ok()) {
+        if let Some(other) = hash.strip_prefix("continue/") {
+            let (state, other) = (self.clone(), other.to_string());
+            self.navigate(self.page.get_untracked());
+            wasm_bindgen_futures::spawn_local(async move {
+                crate::identity::offer_handoff(&state, &other).await;
+            });
+        } else if let Some(id) = hash.strip_prefix("film/").and_then(|id| id.parse().ok()) {
             if self.sheet.get_untracked() != Some(Sheet::Item(id)) {
                 self.open_sheet(Sheet::Item(id));
             }
@@ -424,6 +451,7 @@ impl AppState {
 
     pub fn navigate(&self, page: Page) {
         self.sheet.set(None);
+        self.duel.set(None);
         self.page.set(page);
 
         // Update body class for swipe
@@ -455,6 +483,7 @@ impl AppState {
     }
 }
 
+pub const USER_ID_KEY: &str = "filmrank_uid";
 const SELECTED_KEY: &str = "filmrank_selected";
 const EXCLUDED_KEY: &str = "filmrank_excluded";
 

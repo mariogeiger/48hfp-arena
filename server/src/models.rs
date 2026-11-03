@@ -9,6 +9,10 @@ pub struct UserState {
     pub compared_pairs: HashSet<(usize, usize)>,
     #[serde(default)]
     pub vote_outcomes: HashMap<String, usize>, // "min,max" -> winner_id
+    /// The name the user gave to recognize their identity on another device;
+    /// private, shown only to whoever holds the identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

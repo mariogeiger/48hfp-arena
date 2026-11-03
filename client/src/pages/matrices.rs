@@ -1,5 +1,6 @@
-//! The two vote matrices of the More page: the viewer's own votes, which a
-//! tap edits, and everyone's wins against what the model predicts.
+//! The two vote matrices of the More page: the viewer's own votes, and
+//! everyone's wins against what the model predicts. A tap on a cell of
+//! either opens the duel of its pair, where the viewer's vote is set.
 
 use crate::components::matrix::*;
 use crate::i18n::{fill, t};
@@ -60,7 +61,6 @@ pub fn MatrixSections() -> impl IntoView {
             let legacy_set_ci = legacy_set.clone();
             let films_tt = films.clone();
             let films_oc = films.clone();
-            let vote_map_oc = vote_map.clone();
             let state_oc = state.clone();
 
             render_matrix_canvas(
@@ -98,25 +98,9 @@ pub fn MatrixSections() -> impl IntoView {
                             &[("a", &films_tt[ri].title), ("b", &films_tt[ci].title)],
                         )
                     }),
-                    on_click: Some(Box::new(move |ri, ci| {
-                        let row = &films_oc[ri];
-                        let col = &films_oc[ci];
-                        let a = row.id.min(col.id);
-                        let b = row.id.max(col.id);
-                        let key = format!("{},{}", a, b);
-                        let s = state_oc.clone();
-                        if let Some(&winner) = vote_map_oc.get(&key) {
-                            let loser = if winner == row.id { col.id } else { row.id };
-                            wasm_bindgen_futures::spawn_local(async move {
-                                crate::api::matrix_action(&s, "/api/unvote", winner, loser).await;
-                            });
-                        } else {
-                            let (w, l) = (row.id, col.id);
-                            wasm_bindgen_futures::spawn_local(async move {
-                                crate::api::matrix_action(&s, "/api/vote", w, l).await;
-                            });
-                        }
-                    })),
+                    on_click: Box::new(move |ri, ci| {
+                        state_oc.duel.set(Some((films_oc[ri].id, films_oc[ci].id)));
+                    }),
                 },
             );
         }
@@ -165,6 +149,8 @@ pub fn MatrixSections() -> impl IntoView {
             let films_tt = films.clone();
             let win_map_tt = win_map.clone();
             let score_map_tt = score_map.clone();
+            let films_oc = films.clone();
+            let state_oc = state.clone();
 
             render_matrix_canvas(
                 "global-matrix",
@@ -233,7 +219,9 @@ pub fn MatrixSections() -> impl IntoView {
                             ],
                         )
                     }),
-                    on_click: None,
+                    on_click: Box::new(move |ri, ci| {
+                        state_oc.duel.set(Some((films_oc[ri].id, films_oc[ci].id)));
+                    }),
                 },
             );
         }

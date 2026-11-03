@@ -53,6 +53,22 @@ pub async fn set_selection(
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
+/// The items a user compares: every item when the site has no selection
+/// step, else the user's own picks, as far as they are published.
+fn in_play(data: &AppState, user: &UserState, films: &HashMap<usize, Film>) -> Vec<usize> {
+    if data.require_selection {
+        user.seen_films
+            .iter()
+            .copied()
+            .filter(|id| films.contains_key(id))
+            .collect()
+    } else {
+        let mut all: Vec<usize> = films.keys().copied().collect();
+        all.sort_unstable();
+        all
+    }
+}
+
 pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>) -> HttpResponse {
     if data.is_banned(&query.user_id) {
         return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
@@ -65,19 +81,7 @@ pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>)
         let user = users.entry(query.user_id.clone()).or_default();
         let votes = user.compared_pairs.len();
 
-        // When selection isn't required, every item is in play for everyone;
-        // otherwise use the user's own picked set, as far as it is published.
-        let seen: Vec<usize> = if data.require_selection {
-            user.seen_films
-                .iter()
-                .copied()
-                .filter(|id| films.contains_key(id))
-                .collect()
-        } else {
-            let mut all: Vec<usize> = films.keys().copied().collect();
-            all.sort_unstable();
-            all
-        };
+        let seen = in_play(&data, user, &films);
 
         if seen.len() < 2 {
             return HttpResponse::Ok().json(serde_json::json!({"done": true, "votes": votes}));
@@ -352,26 +356,15 @@ pub async fn user_matrix(
 ) -> HttpResponse {
     let published = data.films();
     let users = data.users.lock().unwrap();
-    let user = match users.get(&query.user_id) {
-        Some(u) => u,
-        None => {
-            return HttpResponse::Ok()
-                .json(serde_json::json!({"films": [], "votes": [], "legacy_votes": []}));
-        }
-    };
+    let newcomer = UserState::default();
+    let user = users.get(&query.user_id).unwrap_or(&newcomer);
 
-    let mut film_ids: HashSet<usize> = HashSet::new();
-    for key in user.vote_outcomes.keys() {
-        if let Some((a, b)) = parse_pair_key(key) {
-            film_ids.insert(a);
-            film_ids.insert(b);
-        }
-    }
+    // Every pair the user may compare, and every pair they did: a vote taken
+    // back leaves its row in place, an empty cell to vote in again.
+    let mut film_ids: HashSet<usize> = in_play(&data, user, &published).into_iter().collect();
     for &(a, b) in &user.compared_pairs {
-        if !user.vote_outcomes.contains_key(&pair_key(a, b)) {
-            film_ids.insert(a);
-            film_ids.insert(b);
-        }
+        film_ids.insert(a);
+        film_ids.insert(b);
     }
 
     let mut films: Vec<serde_json::Value> = film_ids

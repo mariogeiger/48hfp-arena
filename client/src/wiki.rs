@@ -1,7 +1,7 @@
 //! The wiki's calls to the server, and the poster upload: the browser scales
 //! the picked image down to a JPEG before sending it.
 
-use crate::api::{check_banned, fetch_json};
+use crate::api::{get, post, send};
 use crate::state::AppState;
 use leptos::prelude::*;
 use versus_shared::{FilmFields, HistoryEntry, Proposal};
@@ -18,41 +18,6 @@ const POSTER_HEIGHT: f64 = 900.0;
 pub struct History {
     pub revisions: Vec<HistoryEntry>,
     pub original: Option<FilmFields>,
-}
-
-/// Send `body` to `url`; a refusal comes back as its error code.
-async fn send(url: &str, body: &JsValue, content_type: &str) -> Result<serde_json::Value, String> {
-    let opts = web_sys::RequestInit::new();
-    opts.set_method("POST");
-    let headers = web_sys::Headers::new().unwrap();
-    headers.set("Content-Type", content_type).unwrap();
-    opts.set_headers(&headers);
-    opts.set_body(body);
-    let (status, json) = fetch_json(url, &opts)
-        .await
-        .map_err(|_| "server".to_string())?;
-    check_banned(status);
-    if status == 200 {
-        Ok(json)
-    } else {
-        Err(json["error"].as_str().unwrap_or("server").to_string())
-    }
-}
-
-async fn post(url: &str, body: serde_json::Value) -> Result<serde_json::Value, String> {
-    send(
-        url,
-        &JsValue::from_str(&body.to_string()),
-        "application/json",
-    )
-    .await
-}
-
-async fn get<T: serde::de::DeserializeOwned>(url: &str) -> Option<T> {
-    let opts = web_sys::RequestInit::new();
-    opts.set_method("GET");
-    let (_, json) = fetch_json(url, &opts).await.ok()?;
-    serde_json::from_value(json).ok()
 }
 
 pub async fn load_proposals(state: &AppState) {

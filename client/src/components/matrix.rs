@@ -82,7 +82,7 @@ pub struct MatrixConfig {
     pub films: Vec<MatrixFilmInfo>,
     pub cell_info: Box<dyn Fn(usize, usize) -> CellInfo>,
     pub tooltip: Box<dyn Fn(usize, usize) -> String>,
-    pub on_click: Option<Box<dyn Fn(usize, usize)>>,
+    pub on_click: Box<dyn Fn(usize, usize)>,
 }
 
 #[derive(Clone)]
@@ -242,8 +242,6 @@ pub fn render_matrix_canvas(container_id: &str, config: MatrixConfig) {
     // Tooltip + click handling
     let tooltip_el = get_or_create_tooltip();
     let n_copy = n;
-    let _films = config.films.clone();
-    let has_click = config.on_click.is_some();
 
     // Store callbacks in Rc for sharing between closures
     let tooltip_fn = std::rc::Rc::new(config.tooltip);
@@ -269,9 +267,7 @@ pub fn render_matrix_canvas(container_id: &str, config: MatrixConfig) {
                 let _ = tooltip_ref
                     .style()
                     .set_property("top", &format!("{}px", e.client_y() + 12));
-                if has_click {
-                    let _ = canvas_ref.style().set_property("cursor", "pointer");
-                }
+                let _ = canvas_ref.style().set_property("cursor", "pointer");
             } else {
                 let _ = tooltip_ref.style().set_property("display", "none");
                 let _ = canvas_ref.style().set_property("cursor", "default");
@@ -292,30 +288,21 @@ pub fn render_matrix_canvas(container_id: &str, config: MatrixConfig) {
         .unwrap();
     on_leave.forget();
 
-    if click_fn.is_some() {
-        let canvas_ref3 = canvas.clone();
-        let on_click =
-            Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
-                let rect = canvas_ref3.get_bounding_client_rect();
-                let mx = e.client_x() as f64 - rect.left();
-                let my = e.client_y() as f64 - rect.top();
-                let ci = ((mx - HEADER) / CELL).floor() as i32;
-                let ri = ((my - HEADER) / CELL).floor() as i32;
-                if ci >= 0
-                    && ci < n_copy as i32
-                    && ri >= 0
-                    && ri < n_copy as i32
-                    && ci != ri
-                    && let Some(ref f) = *click_fn
-                {
-                    f(ri as usize, ci as usize);
-                }
-            });
-        canvas
-            .add_event_listener_with_callback("click", on_click.as_ref().unchecked_ref())
-            .unwrap();
-        on_click.forget();
-    }
+    let canvas_ref3 = canvas.clone();
+    let on_click = Closure::<dyn Fn(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+        let rect = canvas_ref3.get_bounding_client_rect();
+        let mx = e.client_x() as f64 - rect.left();
+        let my = e.client_y() as f64 - rect.top();
+        let ci = ((mx - HEADER) / CELL).floor() as i32;
+        let ri = ((my - HEADER) / CELL).floor() as i32;
+        if ci >= 0 && ci < n_copy as i32 && ri >= 0 && ri < n_copy as i32 && ci != ri {
+            click_fn(ri as usize, ci as usize);
+        }
+    });
+    canvas
+        .add_event_listener_with_callback("click", on_click.as_ref().unchecked_ref())
+        .unwrap();
+    on_click.forget();
 }
 
 fn get_or_create_tooltip() -> web_sys::HtmlElement {

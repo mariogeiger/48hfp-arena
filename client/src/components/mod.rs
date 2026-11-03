@@ -1,5 +1,7 @@
+pub mod duel;
 pub mod form;
 pub mod history;
+pub mod identity;
 pub mod matrix;
 pub mod nav;
 pub mod overlays;

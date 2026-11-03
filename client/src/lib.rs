@@ -1,6 +1,7 @@
 mod api;
 mod components;
 mod i18n;
+mod identity;
 mod pages;
 mod state;
 mod timeout;
@@ -152,9 +153,11 @@ fn App() -> impl IntoView {
         </div>
 
         <components::sheet::ItemSheet />
+        <components::duel::DuelSheet />
         <components::toast::ToastContainer />
 
         <components::overlays::WelcomeOverlay />
         <components::overlays::BannedOverlay />
+        <components::identity::HandoffOverlay />
     }
 }

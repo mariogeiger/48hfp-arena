@@ -67,3 +67,6 @@ cd client && trunk serve
 | `/api/user-contributions` | GET | Per-user vote counts |
 | `/api/user-matrix` | GET | User's pairwise vote matrix |
 | `/api/global-matrix` | GET | Global win/loss matrix |
+| `/api/identity` | GET | An identity's private name and vote count |
+| `/api/identity/name` | POST | Name one's identity |
+| `/api/identity/merge` | POST | Fold one's identity into another (continuing a session) |

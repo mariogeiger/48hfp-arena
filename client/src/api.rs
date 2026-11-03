@@ -53,6 +53,45 @@ async fn api_post(url: &str, body: &serde_json::Value) -> Result<serde_json::Val
     Ok(json)
 }
 
+/// Send `body` to `url`; a refusal comes back as its error code.
+pub async fn send(
+    url: &str,
+    body: &JsValue,
+    content_type: &str,
+) -> Result<serde_json::Value, String> {
+    let opts = web_sys::RequestInit::new();
+    opts.set_method("POST");
+    let headers = web_sys::Headers::new().unwrap();
+    headers.set("Content-Type", content_type).unwrap();
+    opts.set_headers(&headers);
+    opts.set_body(body);
+    let (status, json) = fetch_json(url, &opts)
+        .await
+        .map_err(|_| "server".to_string())?;
+    check_banned(status);
+    if status == 200 {
+        Ok(json)
+    } else {
+        Err(json["error"].as_str().unwrap_or("server").to_string())
+    }
+}
+
+pub async fn post(url: &str, body: serde_json::Value) -> Result<serde_json::Value, String> {
+    send(
+        url,
+        &JsValue::from_str(&body.to_string()),
+        "application/json",
+    )
+    .await
+}
+
+pub async fn get<T: serde::de::DeserializeOwned>(url: &str) -> Option<T> {
+    let opts = web_sys::RequestInit::new();
+    opts.set_method("GET");
+    let (_, json) = fetch_json(url, &opts).await.ok()?;
+    serde_json::from_value(json).ok()
+}
+
 /// Fetch the per-site config before mount. Does not go through `api_get`
 /// (which touches Leptos context) since it runs before any reactive owner
 /// exists. Falls back to defaults on any error.
@@ -110,6 +149,7 @@ pub async fn boot(state: &AppState) {
         .unwrap_or_default();
     let hash = hash.trim_start_matches('#');
     let selected_count = state.selected_ids.get_untracked().len();
+    let handoff = hash.strip_prefix("continue/").map(str::to_string);
 
     crate::wiki::load_proposals(state).await;
     if let Some(id) = hash.strip_prefix("film/").and_then(|id| id.parse().ok()) {
@@ -124,6 +164,11 @@ pub async fn boot(state: &AppState) {
         state.navigate(Page::Select);
     } else {
         state.navigate(Page::Swipe);
+    }
+
+    crate::identity::load_name(state).await;
+    if let Some(other) = handoff {
+        crate::identity::offer_handoff(state, &other).await;
     }
 }
 

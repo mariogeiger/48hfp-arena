@@ -132,6 +132,20 @@ pub struct UserQuery {
     pub user_id: String,
 }
 
+/// The name a user gives their identity; empty forgets it.
+#[derive(Deserialize)]
+pub struct NamePayload {
+    pub user_id: String,
+    pub name: String,
+}
+
+/// Fold the identity `user_id` into the identity `into`, which goes on.
+#[derive(Deserialize)]
+pub struct MergePayload {
+    pub user_id: String,
+    pub into: String,
+}
+
 #[derive(Deserialize)]
 pub struct EditPayload {
     pub user_id: String,
