@@ -44,10 +44,14 @@ pub fn shower(n: usize) {
     }
 }
 
-/// A short buzz under the finger, where the device can.
+/// A short buzz under the finger, where the device can: Safari has no
+/// `navigator.vibrate`, and calling it there throws.
 pub fn tap() {
-    if let Some(window) = web_sys::window() {
-        let _ = window.navigator().vibrate_with_duration(12);
+    let Some(navigator) = web_sys::window().map(|w| w.navigator()) else {
+        return;
+    };
+    if js_sys::Reflect::has(&navigator, &"vibrate".into()).unwrap_or(false) {
+        let _ = navigator.vibrate_with_duration(12);
     }
 }
 

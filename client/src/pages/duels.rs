@@ -116,13 +116,14 @@ impl Moves {
             Side::A => (pair.a.id, pair.b.id),
             Side::B => (pair.b.id, pair.a.id),
         };
+        // The vote first, the fireworks after: they may fail, it may not.
+        self.play(Fate::Picked(side), 420, move |state| async move {
+            api::cast_vote(&state, winner, loser).await
+        });
         confetti::tap();
         if let Some((x, y)) = confetti::centre_of(side.card()) {
             confetti::burst(x, y, 18);
         }
-        self.play(Fate::Picked(side), 420, move |state| async move {
-            api::cast_vote(&state, winner, loser).await
-        });
     }
 
     fn skip(&self) {
