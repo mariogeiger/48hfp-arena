@@ -1,8 +1,9 @@
-//! The account, top right. Signed out, a button says so; signed in, the
-//! Google picture or the initial of one's name. It opens a sheet to sign in
-//! with Google, to continue on another device through a link or its QR
-//! code, and to sign out. A `#continue/…` link asks here whether the viewer
-//! takes up the identity it carries.
+//! The account, top right. Signed out, a button says so, and opens a sheet
+//! to sign in with Google or to continue on another device through a link or
+//! its QR code. Signed in with Google, which does both and better, it shows
+//! one's picture or initial, and its sheet who one is and how to sign out.
+//! A `#continue/…` link asks here whether the viewer takes up the identity
+//! it carries.
 
 use crate::components::frame::SheetFrame;
 use crate::components::icons::{Icon, icon};
@@ -28,15 +29,20 @@ fn hue(name: &str) -> u32 {
         % 360
 }
 
-/// The viewer's face: their Google picture, else their initial, else a
+/// What the viewer is called: their Google name, else the name they gave,
+/// else their Google e-mail.
+fn called(google: Option<&GoogleProfile>, name: Option<&str>) -> Option<String> {
+    let given = |n: &str| Some(n.trim().to_string()).filter(|n| !n.is_empty());
+    google
+        .and_then(|g| given(&g.name))
+        .or_else(|| name.and_then(given))
+        .or_else(|| google.and_then(|g| given(&g.email)))
+}
+
+/// A face: the Google picture, else the initial of `name`, else a
 /// silhouette.
 fn avatar(google: Option<&GoogleProfile>, name: Option<&str>) -> AnyView {
     let picture = google.map(|g| g.picture.as_str()).filter(|p| !p.is_empty());
-    let name = google
-        .map(|g| g.name.as_str())
-        .filter(|n| !n.trim().is_empty())
-        .or(name)
-        .filter(|n| !n.trim().is_empty());
     match (picture, name) {
         (Some(picture), _) => view! {
             <img class="avatar" src=picture.to_string() alt="" referrerpolicy="no-referrer" />
@@ -57,21 +63,21 @@ fn avatar(google: Option<&GoogleProfile>, name: Option<&str>) -> AnyView {
 #[component]
 pub fn AccountButton() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
-    let panel = state.panel;
-    move || {
-        let google = state.google.get();
-        let name = state.user_name.get();
-        let known = google.is_some() || name.is_some();
-        view! {
-            <button
-                class="account-btn"
-                class:known=known
-                on:click=move |_| panel.set(Some(Panel::Account))
-            >
-                {avatar(google.as_ref(), name.as_deref())}
-                {(!known).then(|| view! { <span class="account-label">{t().sign_in}</span> })}
-            </button>
-        }
+    let (panel, google, name) = (state.panel, state.google, state.user_name);
+    let known = move || google.with(Option::is_some) || name.with(Option::is_some);
+    // The button stays while what it shows changes, so that no tap is lost.
+    view! {
+        <button
+            class="account-btn"
+            class:known=known
+            on:click=move |_| panel.set(Some(Panel::Account))
+        >
+            {move || {
+                let google = google.get();
+                avatar(google.as_ref(), called(google.as_ref(), name.get().as_deref()).as_deref())
+            }}
+            {move || (!known()).then(|| view! { <span class="account-label">{t().sign_in}</span> })}
+        </button>
     }
 }
 
@@ -98,64 +104,64 @@ fn AccountBody() -> impl IntoView {
 
     let head = move || {
         let google = google.get();
-        let name = name.get();
-        let title = google
-            .as_ref()
-            .map(|g| g.name.clone())
-            .filter(|n| !n.is_empty())
-            .or(name.clone())
-            .unwrap_or_else(|| t().keep_votes.to_string());
-        let subtitle = match &google {
-            Some(g) => g.email.clone(),
-            None => t().keep_votes_text.to_string(),
+        let who = called(google.as_ref(), name.get().as_deref());
+        let (title, subtitle) = match &google {
+            Some(g) => {
+                let title = who.clone().unwrap_or_default();
+                let subtitle = (title != g.email).then(|| g.email.clone());
+                (title, subtitle)
+            }
+            None => (
+                who.clone().unwrap_or_else(|| t().keep_votes.to_string()),
+                Some(t().keep_votes_text.to_string()),
+            ),
         };
         view! {
             <div class="account-head">
-                {avatar(google.as_ref(), name.as_deref())}
+                {avatar(google.as_ref(), who.as_deref())}
                 <h2>{title}</h2>
-                <p>{subtitle}</p>
+                {subtitle.map(|s| view! { <p>{s}</p> })}
             </div>
         }
     };
-    let sign_in = move || {
-        (google_on && google.get().is_none()).then(|| {
-            view! {
+    // Signed in with Google, another device signs in the same way: no link
+    // is needed, and none is offered.
+    let ways = move || match google.get() {
+        None => view! {
+            {google_on.then(|| view! {
                 <GoogleButton />
                 <div class="or"><span>{t().or}</span></div>
-            }
-        })
-    };
-    let sign_out = move || {
-        google.get().is_some().then(|| {
-            view! {
-                <button
-                    class="ghost-btn"
-                    on:click=move |_| {
-                        let window = web_sys::window().unwrap();
-                        if window.confirm_with_message(t().google_sign_out_confirm).unwrap_or(false) {
-                            identity::sign_out();
-                        }
+            })}
+            <details class="handoff">
+                <summary>
+                    {icon(Icon::Smartphone)}
+                    <span>{t().other_device}</span>
+                    {icon(Icon::ChevronDown)}
+                </summary>
+                <LinkHandoff />
+            </details>
+        }
+        .into_any(),
+        Some(_) => view! {
+            <button
+                class="ghost-btn"
+                on:click=move |_| {
+                    let window = web_sys::window().unwrap();
+                    if window.confirm_with_message(t().google_sign_out_confirm).unwrap_or(false) {
+                        identity::sign_out();
                     }
-                >
-                    {icon(Icon::LogOut)}
-                    <span>{t().google_sign_out}</span>
-                </button>
-            }
-        })
+                }
+            >
+                {icon(Icon::LogOut)}
+                <span>{t().google_sign_out}</span>
+            </button>
+        }
+        .into_any(),
     };
 
     view! {
         {head}
-        {sign_in}
-        <details class="handoff">
-            <summary>
-                {icon(Icon::Smartphone)}
-                <span>{t().other_device}</span>
-                {icon(Icon::ChevronDown)}
-            </summary>
-            <LinkHandoff />
-        </details>
-        {sign_out}
+        {ways}
     }
 }
 
