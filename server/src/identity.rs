@@ -145,16 +145,21 @@ fn absorb(users: &mut HashMap<String, UserState>, from: &str, into: &str) {
     fold(users.entry(into.to_string()).or_default(), from);
 }
 
-/// `into` with what only `from` has: the pairs it compared, with their
-/// outcomes, the items it selected, and its name and Google account if
-/// `into` has none.
+/// `into` with what `from` adds: the pairs it compared, with their votes
+/// where they are the more recent (an undated vote being older than any
+/// dated one, and `into`'s winning between two of the same date), the items
+/// it selected, its name and Google account if `into` has none, and its
+/// nickname if `into` has none or `from`'s alone was written by hand.
 fn fold(into: &mut UserState, from: UserState) {
     for pair in from.compared_pairs {
-        if into.compared_pairs.insert(pair) {
-            let key = pair_key(pair.0, pair.1);
-            if let Some(&outcome) = from.vote_outcomes.get(&key) {
-                into.vote_outcomes.insert(key, outcome);
-            }
+        let key = pair_key(pair.0, pair.1);
+        let theirs = from.votes.get(&key).copied();
+        let new = into.compared_pairs.insert(pair);
+        let mine = into.votes.get(&key).and_then(|v| v.at);
+        if let Some(theirs) = theirs
+            && (new || theirs.at > mine)
+        {
+            into.votes.insert(key, theirs);
         }
     }
     for id in from.seen_films {
@@ -168,11 +173,16 @@ fn fold(into: &mut UserState, from: UserState) {
     if into.google.is_none() {
         into.google = from.google;
     }
+    into.nickname = match (into.nickname.take(), from.nickname) {
+        (Some(mine), Some(theirs)) if theirs.written && !mine.written => Some(theirs),
+        (mine, theirs) => mine.or(theirs),
+    };
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{Nickname, Vote};
     use versus_shared::Outcome;
 
     fn voter(votes: &[(usize, usize, usize)], seen: &[usize], name: Option<&str>) -> UserState {
@@ -184,8 +194,13 @@ mod tests {
         for &(a, b, winner) in votes {
             user.compared_pairs
                 .insert(versus_shared::canonical_pair(a, b));
-            user.vote_outcomes
-                .insert(pair_key(a, b), Outcome::Won(winner));
+            user.votes.insert(
+                pair_key(a, b),
+                Vote {
+                    outcome: Outcome::Won(winner),
+                    at: None,
+                },
+            );
         }
         user
     }
@@ -196,9 +211,9 @@ mod tests {
         let from = voter(&[(2, 1, 2), (3, 4, 4)], &[3, 4], Some("Laptop"));
         fold(&mut into, from);
         assert_eq!(into.compared_pairs.len(), 3);
-        assert_eq!(into.vote_outcomes[&pair_key(1, 2)], Outcome::Won(1));
-        assert_eq!(into.vote_outcomes[&pair_key(2, 3)], Outcome::Won(3));
-        assert_eq!(into.vote_outcomes[&pair_key(3, 4)], Outcome::Won(4));
+        assert_eq!(into.votes[&pair_key(1, 2)].outcome, Outcome::Won(1));
+        assert_eq!(into.votes[&pair_key(2, 3)].outcome, Outcome::Won(3));
+        assert_eq!(into.votes[&pair_key(3, 4)].outcome, Outcome::Won(4));
         assert_eq!(into.seen_films, vec![1, 2, 3, 4]);
         assert_eq!(into.name.as_deref(), Some("Tom"));
     }
@@ -208,5 +223,68 @@ mod tests {
         let mut into = voter(&[], &[], None);
         fold(&mut into, voter(&[], &[], Some("Tom")));
         assert_eq!(into.name.as_deref(), Some("Tom"));
+    }
+
+    fn dated(user: &mut UserState, a: usize, b: usize, outcome: Outcome, at: Option<u64>) {
+        user.compared_pairs
+            .insert(versus_shared::canonical_pair(a, b));
+        user.votes.insert(pair_key(a, b), Vote { outcome, at });
+    }
+
+    #[test]
+    fn fold_keeps_the_more_recent_vote_and_the_account_s_between_undated_ones() {
+        let mut into = UserState::default();
+        let mut from = UserState::default();
+        // The device voted later.
+        dated(&mut into, 1, 2, Outcome::Won(1), Some(10));
+        dated(&mut from, 1, 2, Outcome::Won(2), Some(20));
+        // The account voted later.
+        dated(&mut into, 2, 3, Outcome::Won(2), Some(30));
+        dated(&mut from, 2, 3, Outcome::Tie, Some(20));
+        // A dated vote is more recent than an undated one.
+        dated(&mut into, 3, 4, Outcome::Won(3), None);
+        dated(&mut from, 3, 4, Outcome::Won(4), Some(1));
+        // Between two undated votes, the account's.
+        dated(&mut into, 4, 5, Outcome::Won(4), None);
+        dated(&mut from, 4, 5, Outcome::Won(5), None);
+        // Compared before outcomes were recorded, against a dated vote.
+        into.compared_pairs.insert((5, 6));
+        dated(&mut from, 5, 6, Outcome::Tie, Some(1));
+        fold(&mut into, from);
+        let outcome = |a, b| into.votes[&pair_key(a, b)].outcome;
+        assert_eq!(outcome(1, 2), Outcome::Won(2));
+        assert_eq!(outcome(2, 3), Outcome::Won(2));
+        assert_eq!(outcome(3, 4), Outcome::Won(4));
+        assert_eq!(outcome(4, 5), Outcome::Won(4));
+        assert_eq!(outcome(5, 6), Outcome::Tie);
+        assert_eq!(into.compared_pairs.len(), 5);
+    }
+
+    #[test]
+    fn fold_keeps_the_account_s_nickname_unless_only_the_device_s_was_written() {
+        let nick = |text: &str, written| {
+            Some(Nickname {
+                text: text.to_string(),
+                written,
+            })
+        };
+        let folded = |mine, theirs| {
+            let mut into = UserState {
+                nickname: mine,
+                ..UserState::default()
+            };
+            let from = UserState {
+                nickname: theirs,
+                ..UserState::default()
+            };
+            fold(&mut into, from);
+            into.nickname.map(|n| n.text)
+        };
+        let text = |t: &str| Some(t.to_string());
+        assert_eq!(folded(nick("A", false), nick("B", false)), text("A"));
+        assert_eq!(folded(nick("A", false), nick("B", true)), text("B"));
+        assert_eq!(folded(nick("A", true), nick("B", true)), text("A"));
+        assert_eq!(folded(None, nick("B", false)), text("B"));
+        assert_eq!(folded(nick("A", false), None), text("A"));
     }
 }

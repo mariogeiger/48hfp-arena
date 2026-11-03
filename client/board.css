@@ -287,17 +287,19 @@
 .contrib {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 10px;
 }
 .contrib-row {
   display: grid;
-  grid-template-columns: 76px 1fr 34px;
+  grid-template-columns: 1fr 34px;
   align-items: center;
-  gap: 10px;
+  gap: 3px 10px;
   font-size: 13px;
 }
 .contrib-label {
-  text-align: right;
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 750;
   color: var(--text-muted);

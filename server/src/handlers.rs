@@ -1,5 +1,5 @@
 use crate::bt::{BtRating, bt_score_to_display, fisher_pair_scores};
-use crate::models::UserState;
+use crate::models::{UserState, Vote};
 use crate::persistence::AppState;
 use versus_shared::*;
 
@@ -155,11 +155,12 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
         let mut ratings = data.bt_ratings.lock().unwrap();
         let mut users = data.users.lock().unwrap();
         let user = users.entry(payload.user_id.clone()).or_default();
-        if user.vote_outcomes.get(&key) == Some(&outcome) {
+        if user.votes.get(&key).map(|v| v.outcome) == Some(outcome) {
             return HttpResponse::Ok().json(serde_json::json!({"status": "already_voted"}));
         }
         user.compared_pairs.insert(pair);
-        user.vote_outcomes.insert(key, outcome);
+        user.votes.insert(key, Vote::now(outcome));
+        crate::nickname::name(&mut users, &payload.user_id, data.lang);
         let banned = data.banned.lock().unwrap();
         AppState::recompute_ratings(&mut ratings, &users, &banned);
     }
@@ -201,7 +202,7 @@ pub async fn unvote(data: web::Data<AppState>, payload: web::Json<UnvotePayload>
         if !user.compared_pairs.remove(&pair) {
             return HttpResponse::BadRequest().json(serde_json::json!({"error": "pair not found"}));
         }
-        user.vote_outcomes
+        user.votes
             .remove(&pair_key(payload.winner_id, payload.loser_id));
         let banned = data.banned.lock().unwrap();
         AppState::recompute_ratings(&mut ratings, &users, &banned);
@@ -236,7 +237,7 @@ pub async fn reset_votes(
 
         if let Some(user) = users.get_mut(&payload.user_id) {
             user.compared_pairs.clear();
-            user.vote_outcomes.clear();
+            user.votes.clear();
         }
 
         AppState::recompute_ratings(&mut ratings, &users, &banned);
@@ -336,18 +337,18 @@ pub async fn user_matrix(
     films.sort_by_key(|f| f["id"].as_u64().unwrap_or(0));
 
     let votes: Vec<serde_json::Value> = user
-        .vote_outcomes
+        .votes
         .iter()
-        .filter_map(|(key, outcome)| {
+        .filter_map(|(key, vote)| {
             let (a, b) = parse_pair_key(key)?;
-            Some(serde_json::json!({"film_a": a, "film_b": b, "outcome": outcome}))
+            Some(serde_json::json!({"film_a": a, "film_b": b, "outcome": vote.outcome}))
         })
         .collect();
 
     let legacy_votes: Vec<serde_json::Value> = user
         .compared_pairs
         .iter()
-        .filter(|&&(a, b)| !user.vote_outcomes.contains_key(&pair_key(a, b)))
+        .filter(|&&(a, b)| !user.votes.contains_key(&pair_key(a, b)))
         .map(|&(a, b)| serde_json::json!({"film_a": a, "film_b": b}))
         .collect();
 
@@ -411,7 +412,7 @@ fn ranked_films<'a>(
         if banned.contains(user_id) {
             continue;
         }
-        for key in state.vote_outcomes.keys() {
+        for key in state.votes.keys() {
             if let Some((a, b)) = parse_pair_key(key) {
                 voters_per_film.entry(a).or_default().insert(user_id);
                 voters_per_film.entry(b).or_default().insert(user_id);
@@ -485,6 +486,7 @@ pub async fn user_contributions(
             serde_json::json!({
                 "user_id": uid,
                 "is_you": *uid == query.user_id,
+                "nickname": state.nickname.as_ref().map(|n| n.text.as_str()),
                 "votes": state.compared_pairs.len(),
                 "films_voted": films_voted.len(),
             })

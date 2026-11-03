@@ -1,6 +1,6 @@
 use crate::bt::{BtRating, run_bradley_terry};
 use crate::catalog::Catalog;
-use crate::config::SiteConfig;
+use crate::config::{Lang, SiteConfig};
 use crate::models::{PersistentData, UserState};
 use crate::throttle::Throttle;
 use versus_shared::{Film, LiveChange, LiveEvent, Outcome, parse_pair_key};
@@ -59,6 +59,8 @@ pub struct AppState {
     /// Leaderboard eligibility thresholds (see SiteConfig).
     pub min_votes: u32,
     pub min_voters: usize,
+    /// The language of the site, which its nicknames speak.
+    pub lang: Lang,
 }
 
 impl AppState {
@@ -84,6 +86,7 @@ impl AppState {
             require_selection: cfg.require_selection,
             min_votes: cfg.min_votes,
             min_voters: cfg.min_voters,
+            lang: cfg.lang,
         }
     }
 
@@ -148,7 +151,7 @@ impl AppState {
             if banned.contains(uid) {
                 continue;
             }
-            for (key, &outcome) in &state.vote_outcomes {
+            for (key, vote) in &state.votes {
                 let Some((a, b)) = parse_pair_key(key) else {
                     continue;
                 };
@@ -158,7 +161,7 @@ impl AppState {
                         .or_insert_with(|| BtRating::new(id))
                         .comparisons += 1;
                 }
-                match outcome {
+                match vote.outcome {
                     Outcome::Won(winner) => {
                         let loser = if winner == a { b } else { a };
                         *ratings

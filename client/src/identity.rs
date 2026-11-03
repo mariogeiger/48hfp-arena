@@ -1,4 +1,5 @@
-//! This browser's identity on the server: its private name, the link that
+//! This browser's identity on the server: its private name, its public
+//! nickname, the link that
 //! continues it on another device, taking up the identity such a link or a
 //! Google account offers, which folds this device's votes into it, and
 //! leaving it.
@@ -35,6 +36,20 @@ pub async fn save_name(state: &AppState, name: &str) -> Result<(), String> {
     state
         .user_name
         .set((!name.is_empty()).then(|| name.to_string()));
+    Ok(())
+}
+
+/// Set the nickname the viewer writes, or draw another for an empty one,
+/// and show it in the list of who voted most.
+pub async fn save_nickname(state: &AppState, text: &str) -> Result<(), String> {
+    let body = serde_json::json!({ "user_id": state.user_id, "name": text });
+    let answer = post("/api/identity/nickname", body).await?;
+    let nickname = answer["nickname"]["text"].as_str().map(str::to_string);
+    state.contributions.update(|all| {
+        for c in all.iter_mut().filter(|c| c.is_you) {
+            c.nickname = nickname.clone();
+        }
+    });
     Ok(())
 }
 

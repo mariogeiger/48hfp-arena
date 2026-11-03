@@ -6,6 +6,7 @@ mod google;
 mod handlers;
 mod identity;
 mod models;
+mod nickname;
 mod persistence;
 mod throttle;
 mod wiki;
@@ -40,7 +41,8 @@ async fn main() -> std::io::Result<()> {
     );
     let catalog = Catalog::load(seed, &cfg.edits_path, &load_banned());
     let films: HashMap<usize, Film> = catalog.published();
-    let (ratings, users, votes_on_disk) = load_db(&films);
+    let (ratings, mut users, votes_on_disk) = load_db(&films);
+    let named = nickname::name_voters(&mut users, cfg.lang);
     let (live_tx, _) = broadcast::channel::<LiveEvent>(64);
 
     let state = web::Data::new(AppState::new(
@@ -51,6 +53,10 @@ async fn main() -> std::io::Result<()> {
         votes_on_disk,
         &cfg,
     ));
+    // Voters named just now keep their nicknames.
+    if named > 0 {
+        state.save();
+    }
     // Config the browser needs, precomputed once and served at /api/config.
     let client_config = web::Data::new(cfg.client_json());
     let columns = web::Data::new(cfg.columns.clone());
@@ -96,6 +102,10 @@ async fn main() -> std::io::Result<()> {
             .route("/uploads/{name}", web::get().to(wiki::uploaded))
             .route("/api/identity", web::get().to(identity::identity))
             .route("/api/identity/name", web::post().to(identity::set_name))
+            .route(
+                "/api/identity/nickname",
+                web::post().to(nickname::set_nickname),
+            )
             .route("/api/identity/merge", web::post().to(identity::merge))
             .route(
                 "/api/identity/google",

@@ -1,4 +1,4 @@
-/* The viewer's own: their page, their matrix and the duel its cells open,
+/* The viewer's own: their page, their nickname, their matrix and the duel its cells open,
    their account, and the lists of items they pick from. */
 
 .me {
@@ -121,6 +121,35 @@
   font-size: 13px;
   font-weight: 800;
   white-space: nowrap;
+}
+.nickname {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 22px;
+  background: var(--card);
+  box-shadow: var(--shadow-s);
+}
+.nickname-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.nickname-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+}
+.nickname .round-btn {
+  width: 44px;
+  height: 44px;
+  background: var(--card-alt);
+  box-shadow: none;
 }
 .row-btn {
   display: flex;

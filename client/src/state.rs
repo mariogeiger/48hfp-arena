@@ -220,6 +220,9 @@ pub struct Contribution {
     pub rank: u64,
     pub is_you: bool,
     pub votes: u64,
+    /// The voter's public nickname.
+    #[serde(default)]
+    pub nickname: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

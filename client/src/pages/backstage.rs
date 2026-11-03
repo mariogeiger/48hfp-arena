@@ -1,4 +1,5 @@
-//! Behind the ranking: how many votes and voters, who voted most, how every
+//! Behind the ranking: how many votes and voters, who voted most, by
+//! nickname, how every
 //! pair fared against the model, and the way to how it is computed.
 
 use crate::components::icons::{Icon, icon};
@@ -98,10 +99,11 @@ fn Contributions() -> impl IntoView {
                     {shown
                         .into_iter()
                         .map(|c| {
-                            let label = if c.is_you {
-                                t().contrib_you.to_string()
-                            } else {
-                                fill(t().contrib_voter, &[("n", &c.rank)])
+                            let label = match (c.is_you, &c.nickname) {
+                                (true, Some(name)) => fill(t().contrib_you_named, &[("name", name)]),
+                                (true, None) => t().contrib_you.to_string(),
+                                (false, Some(name)) => name.clone(),
+                                (false, None) => fill(t().contrib_voter, &[("n", &c.rank)]),
                             };
                             let width = format!("{:.1}%", 100.0 * c.votes as f64 / max as f64);
                             view! {

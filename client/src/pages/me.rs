@@ -1,11 +1,12 @@
 //! The viewer's own page: how many votes they cast, where that puts them
-//! among the voters, how far they are through their duels, every vote of
+//! among the voters, the nickname they bear there, how far they are through their duels, every vote of
 //! theirs in a matrix whose cells reopen their duels, and the way to start
 //! over.
 
 use crate::api;
 use crate::components::icons::{Icon, icon};
 use crate::i18n::{fill, say, t};
+use crate::identity;
 use crate::pages::matrices::UserMatrix;
 use crate::state::{AppState, Panel, SiteConfig};
 use leptos::prelude::*;
@@ -59,6 +60,8 @@ pub fn MePage() -> impl IntoView {
                 </div>
             </section>
 
+            <NicknameCard />
+
             {move || (google_on && anonymous()).then(|| view! {
                 <button class="nudge" on:click=move |_| panel.set(Some(Panel::Account))>
                     <span class="nudge-icon">{icon(Icon::User)}</span>
@@ -98,5 +101,83 @@ pub fn MePage() -> impl IntoView {
                 <span>{t().reset_button}</span>
             </button>
         </div>
+    }
+}
+
+/// The nickname the list of who voted most shows for the viewer, once they
+/// voted: another drawn at a tap, or one they write.
+#[component]
+fn NicknameCard() -> impl IntoView {
+    let state = use_context::<AppState>().unwrap();
+    let contributions = state.contributions;
+    let mine = Memo::new(move |_| {
+        contributions.with(|all| {
+            all.iter()
+                .find(|c| c.is_you)
+                .and_then(|c| c.nickname.clone())
+        })
+    });
+    let draft = RwSignal::new(String::new());
+    let busy = RwSignal::new(false);
+    let error = RwSignal::new(None::<&'static str>);
+    let send = move |text: String| {
+        let state = state.clone();
+        busy.set(true);
+        wasm_bindgen_futures::spawn_local(async move {
+            match identity::save_nickname(&state, &text).await {
+                Ok(()) => {
+                    error.set(None);
+                    draft.set(String::new());
+                }
+                Err(code) => error.set(Some(t().error(&code))),
+            }
+            busy.set(false);
+        });
+    };
+    move || {
+        let (draw, write, write_key) = (send.clone(), send.clone(), send.clone());
+        mine.get().map(|name| {
+            view! {
+                <section class="nickname">
+                    <h2 class="section-title">{t().nickname_title}</h2>
+                    <div class="nickname-row">
+                        <b class="nickname-text">{name}</b>
+                        <button
+                            class="round-btn"
+                            title=t().nickname_draw
+                            aria-label=t().nickname_draw
+                            disabled=move || busy.get()
+                            on:click=move |_| draw(String::new())
+                        >
+                            {icon(Icon::Dices)}
+                        </button>
+                    </div>
+                    <div class="session-name">
+                        <input
+                            type="text"
+                            maxlength="40"
+                            aria-label=t().nickname_placeholder
+                            placeholder=t().nickname_placeholder
+                            prop:value=move || draft.get()
+                            on:input=move |ev| draft.set(event_target_value(&ev))
+                            on:keydown=move |ev| {
+                                if ev.key() == "Enter" && !draft.get_untracked().trim().is_empty() {
+                                    write_key(draft.get_untracked());
+                                }
+                            }
+                        />
+                        <button
+                            class="mini-btn"
+                            disabled=move || busy.get() || draft.get().trim().is_empty()
+                            on:click=move |_| write(draft.get_untracked())
+                        >
+                            {t().form_save}
+                        </button>
+                    </div>
+                    {move || error.get().map(|e| view! { <p class="form-error">{e}</p> })}
+                    <p class="fine-print">{t().nickname_hint}</p>
+                </section>
+            }
+        })
     }
 }
