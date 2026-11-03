@@ -1,5 +1,5 @@
-//! An item's video: played in place when the link is YouTube, Vimeo or a
-//! video file, else offered as a link.
+//! An item's video: played in place when the link is YouTube, YouCraft, Vimeo
+//! or a video file, else offered as a link.
 
 use leptos::prelude::*;
 
@@ -40,8 +40,17 @@ pub fn embed(url: &str) -> Embed {
         }
         _ => None,
     };
-    if let Some(id) = youtube.filter(|id| is_youtube_id(id)) {
+    if let Some(id) = youtube.filter(|id| is_video_id(id)) {
         return Embed::Frame(format!("https://www.youtube-nocookie.com/embed/{id}"));
+    }
+
+    let youcraft = match (host, segments.as_slice()) {
+        ("youcraft.tube", ["watch"]) => param("v"),
+        ("youcraft.tube", ["embed", id]) => Some(*id),
+        _ => None,
+    };
+    if let Some(id) = youcraft.filter(|id| is_video_id(id)) {
+        return Embed::Frame(format!("https://youcraft.tube/embed/{id}"));
     }
 
     let vimeo = match (host, segments.as_slice()) {
@@ -67,7 +76,9 @@ pub fn embed(url: &str) -> Embed {
     Embed::Link(url.to_string())
 }
 
-fn is_youtube_id(id: &str) -> bool {
+/// Whether `id` is a video's id on YouTube or YouCraft, which share its form:
+/// eleven characters of the URL-safe base64 alphabet.
+fn is_video_id(id: &str) -> bool {
     id.len() == 11
         && id
             .bytes()
@@ -109,6 +120,13 @@ mod tests {
         assert_eq!(embed("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=3"), yt);
         assert_eq!(embed("https://youtu.be/dQw4w9WgXcQ?si=x"), yt);
         assert_eq!(embed("https://m.youtube.com/shorts/dQw4w9WgXcQ"), yt);
+        let yc = Embed::Frame("https://youcraft.tube/embed/I5g2TEn0UtU".into());
+        assert_eq!(embed("https://youcraft.tube/watch?v=I5g2TEn0UtU"), yc);
+        assert_eq!(embed("https://www.youcraft.tube/embed/I5g2TEn0UtU"), yc);
+        assert!(matches!(
+            embed("https://youcraft.tube/watch?v=I5g2TEn0UtU%22"),
+            Embed::Link(_)
+        ));
         assert_eq!(
             embed("https://vimeo.com/123456/abcdef"),
             Embed::Frame("https://player.vimeo.com/video/123456?h=abcdef".into())
