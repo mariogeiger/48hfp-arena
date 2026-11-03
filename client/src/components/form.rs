@@ -26,7 +26,8 @@ fn TextField(label: String, value: RwSignal<String>, #[prop(optional)] url: bool
         <label class="form-field">
             <span>{label}</span>
             <input
-                type=if url { "url" } else { "text" }
+                type="text"
+                inputmode=if url { "url" } else { "text" }
                 prop:value=move || value.get()
                 on:input=move |ev| value.set(event_target_value(&ev))
             />
@@ -144,7 +145,8 @@ pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl In
                                 <input type="file" accept="image/*" on:change=on_file />
                             </label>
                             <input
-                                type="url"
+                                type="text"
+                                inputmode="url"
                                 placeholder=t().form_poster_link
                                 prop:value=move || poster.get()
                                 on:input=move |ev| poster.set(event_target_value(&ev))
