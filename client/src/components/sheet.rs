@@ -139,7 +139,7 @@ fn ItemView(film: Film, proposal: Option<Proposal>, mode: RwSignal<Mode>) -> imp
                 <div class="item-standing">
                     <span class="standing-rank">{format!("#{}", rank + 1)}</span>
                     <span>{format!("{} pts", entry.rating.round() as i64)}</span>
-                    <span>{say(t().board_record, &[("w", &entry.wins), ("l", &entry.losses)])}</span>
+                    <span>{crate::i18n::record(entry.wins, entry.ties, entry.losses)}</span>
                 </div>
             })
         })

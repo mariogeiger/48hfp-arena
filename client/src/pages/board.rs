@@ -6,7 +6,7 @@
 use crate::api::html_escape;
 use crate::components::card::meta;
 use crate::components::poster::{give_way_to_tile, poster_html};
-use crate::i18n::{or_default, say, t};
+use crate::i18n::{or_default, record, say, t};
 use crate::state::{AppState, LeaderboardEntry, Page, Sheet, SiteConfig};
 use leptos::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -131,7 +131,7 @@ fn board_html(
             let stats = format!(
                 r#"<span class="board-score">{}</span><span class="board-record">{}</span>"#,
                 item.rating.round() as i64,
-                say(t().board_record, &[("w", &item.wins), ("l", &item.losses)]),
+                record(item.wins, item.ties, item.losses),
             );
             html.push_str(&row_html(&(first_rank + i).to_string(), film, &stats));
         }

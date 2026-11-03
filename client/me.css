@@ -219,6 +219,19 @@
     0 0 0 3px var(--win),
     var(--shadow);
 }
+.duel-sheet .duel-card.tied {
+  box-shadow:
+    0 0 0 3px var(--matrix-tie),
+    var(--shadow);
+}
+.duel-sheet .duel-card.tied .duel-badge {
+  color: var(--matrix-tie);
+}
+.duel-sheet > .tie-btn {
+  display: flex;
+  margin: 10px auto 0;
+  animation: none;
+}
 .duel-badge {
   min-height: 18px;
   margin-top: 6px;
@@ -262,6 +275,7 @@
   flex: 1;
   height: 10px;
   overflow: hidden;
+  display: flex;
   border-radius: 99px;
   background: var(--gold);
 }
@@ -269,11 +283,14 @@
   background: var(--card-alt);
 }
 .split-bar i {
-  display: block;
+  flex: none;
   height: 100%;
   background: var(--purple);
   box-shadow: 2px 0 0 var(--card);
   transition: width 0.5s var(--ease-out);
+}
+.split-bar i.split-tie {
+  background: var(--matrix-tie);
 }
 
 /* THE ACCOUNT */

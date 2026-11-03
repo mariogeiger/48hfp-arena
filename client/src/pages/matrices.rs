@@ -1,5 +1,6 @@
-//! The two vote matrices: the viewer's own votes, on their page, and
-//! everyone's wins against what the model predicts, behind the ranking. A
+//! The two vote matrices: the viewer's own votes, wins, losses and ties, on
+//! their page, and everyone's scores (a tie counting half) against what the
+//! model predicts, behind the ranking. A
 //! tap on a cell of either opens the duel of its pair, where the viewer's
 //! vote is set.
 
@@ -7,6 +8,7 @@ use crate::components::matrix::*;
 use crate::i18n::{fill, t};
 use crate::state::AppState;
 use leptos::prelude::*;
+use versus_shared::Outcome;
 
 #[component]
 pub fn UserMatrix() -> impl IntoView {
@@ -31,25 +33,6 @@ pub fn UserMatrix() -> impl IntoView {
             }
 
             let films = sort_films_by_board(&data.films, &board);
-            let vote_map: std::collections::HashMap<String, usize> = data
-                .votes
-                .iter()
-                .filter_map(|v| {
-                    let a = v.film_a.min(v.film_b);
-                    let b = v.film_a.max(v.film_b);
-                    Some((format!("{},{}", a, b), v.winner?))
-                })
-                .collect();
-            let legacy_set: std::collections::HashSet<String> = data
-                .legacy_votes
-                .iter()
-                .map(|v| {
-                    let a = v.film_a.min(v.film_b);
-                    let b = v.film_a.max(v.film_b);
-                    format!("{},{}", a, b)
-                })
-                .collect();
-
             let matrix_films: Vec<MatrixFilmInfo> = films
                 .iter()
                 .map(|f| MatrixFilmInfo {
@@ -58,8 +41,6 @@ pub fn UserMatrix() -> impl IntoView {
                 .collect();
 
             let films_ci = films.clone();
-            let vote_map_ci = vote_map.clone();
-            let legacy_set_ci = legacy_set.clone();
             let films_tt = films.clone();
             let films_oc = films.clone();
             let state_oc = state.clone();
@@ -69,28 +50,17 @@ pub fn UserMatrix() -> impl IntoView {
                 MatrixConfig {
                     films: matrix_films,
                     cell_info: Box::new(move |ri, ci| {
-                        let row = &films_ci[ri];
-                        let col = &films_ci[ci];
-                        let a = row.id.min(col.id);
-                        let b = row.id.max(col.id);
-                        let key = format!("{},{}", a, b);
-                        if let Some(&winner) = vote_map_ci.get(&key) {
-                            let won = winner == row.id;
-                            CellInfo {
-                                bg: if won { CellBg::Win } else { CellBg::Loss },
-                                text: if won { t().matrix_win } else { t().matrix_loss }
-                                    .to_string(),
-                            }
-                        } else if legacy_set_ci.contains(&key) {
-                            CellInfo {
-                                bg: CellBg::Legacy,
-                                text: "?".to_string(),
-                            }
-                        } else {
-                            CellInfo {
-                                bg: CellBg::Empty,
-                                text: String::new(),
-                            }
+                        let (row, col) = (films_ci[ri].id, films_ci[ci].id);
+                        let (bg, text) = match data.outcome(row, col) {
+                            Some(Outcome::Won(w)) if w == row => (CellBg::Win, t().matrix_win),
+                            Some(Outcome::Won(_)) => (CellBg::Loss, t().matrix_loss),
+                            Some(Outcome::Tie) => (CellBg::Tie, t().matrix_tie),
+                            None if data.compared_before(row, col) => (CellBg::Legacy, "?"),
+                            None => (CellBg::Empty, ""),
+                        };
+                        CellInfo {
+                            bg,
+                            text: text.to_string(),
                         }
                     }),
                     tooltip: Box::new(move |ri, ci| {
@@ -139,17 +109,7 @@ pub fn GlobalMatrix() -> impl IntoView {
             }
 
             let films = sort_films_by_board(&data.films, &board);
-            let win_map: std::collections::HashMap<String, u32> = data
-                .wins
-                .iter()
-                .map(|w| (format!("{},{}", w.winner, w.loser), w.count))
-                .collect();
-            let score_map: std::collections::HashMap<usize, f64> = data
-                .films
-                .iter()
-                .map(|f| (f.id, f.score.unwrap_or(1.0)))
-                .collect();
-
+            let tally = std::rc::Rc::new(data.tally());
             let matrix_films: Vec<MatrixFilmInfo> = films
                 .iter()
                 .map(|f| MatrixFilmInfo {
@@ -158,11 +118,8 @@ pub fn GlobalMatrix() -> impl IntoView {
                 .collect();
 
             let films_ci = films.clone();
-            let win_map_ci = win_map.clone();
-            let score_map_ci = score_map.clone();
+            let tally_ci = tally.clone();
             let films_tt = films.clone();
-            let win_map_tt = win_map.clone();
-            let score_map_tt = score_map.clone();
             let films_oc = films.clone();
             let state_oc = state.clone();
 
@@ -171,55 +128,27 @@ pub fn GlobalMatrix() -> impl IntoView {
                 MatrixConfig {
                     films: matrix_films,
                     cell_info: Box::new(move |ri, ci| {
-                        let row = &films_ci[ri];
-                        let col = &films_ci[ci];
-                        let w_rc = win_map_ci
-                            .get(&format!("{},{}", row.id, col.id))
-                            .copied()
-                            .unwrap_or(0);
-                        let w_cr = win_map_ci
-                            .get(&format!("{},{}", col.id, row.id))
-                            .copied()
-                            .unwrap_or(0);
-                        let total = w_rc + w_cr;
-                        if total == 0 {
-                            return CellInfo {
+                        let (row, col) = (films_ci[ri].id, films_ci[ci].id);
+                        match tally_ci.share(row, col) {
+                            None => CellInfo {
                                 bg: CellBg::Empty,
                                 text: String::new(),
-                            };
-                        }
-                        let observed = w_rc as f64 / total as f64;
-                        let bi = score_map_ci.get(&row.id).copied().unwrap_or(1.0);
-                        let bj = score_map_ci.get(&col.id).copied().unwrap_or(1.0);
-                        let predicted = bi / (bi + bj);
-                        let residual = observed - predicted;
-                        CellInfo {
-                            bg: CellBg::Residual(residual),
-                            text: w_rc.to_string(),
+                            },
+                            Some(observed) => CellInfo {
+                                bg: CellBg::Residual(observed - tally_ci.chance(row, col)),
+                                text: tally_ci.record(row, col).0.to_string(),
+                            },
                         }
                     }),
                     tooltip: Box::new(move |ri, ci| {
-                        let row = &films_tt[ri];
-                        let col = &films_tt[ci];
-                        let w_rc = win_map_tt
-                            .get(&format!("{},{}", row.id, col.id))
-                            .copied()
-                            .unwrap_or(0);
-                        let w_cr = win_map_tt
-                            .get(&format!("{},{}", col.id, row.id))
-                            .copied()
-                            .unwrap_or(0);
-                        let total = w_rc + w_cr;
-                        if total == 0 {
+                        let (row, col) = (&films_tt[ri], &films_tt[ci]);
+                        let Some(observed) = tally.share(row.id, col.id) else {
                             return fill(
                                 t().matrix_no_votes,
                                 &[("a", &row.title), ("b", &col.title)],
                             );
-                        }
-                        let observed = w_rc as f64 / total as f64;
-                        let bi = score_map_tt.get(&row.id).copied().unwrap_or(1.0);
-                        let bj = score_map_tt.get(&col.id).copied().unwrap_or(1.0);
-                        let predicted = bi / (bi + bj);
+                        };
+                        let predicted = tally.chance(row.id, col.id);
                         let residual = observed - predicted;
                         let sign = if residual > 0.0 { "+" } else { "" };
                         fill(

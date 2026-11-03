@@ -1,6 +1,7 @@
 //! The duels: two items side by side, and the viewer taps the one they
-//! prefer, drags towards it or presses ← or →. The winner glows and bursts
-//! into confetti, the loser fades, the next pair slides in. Below sit undo,
+//! prefer, drags towards it or presses ← or →, or calls it a tie with the
+//! button between them or ↑. The winner glows and bursts into confetti, the
+//! loser fades, a tie lights both; the next pair slides in. Below sit undo,
 //! skip, and the votes cast with how far the viewer is through their duels.
 
 use crate::api;
@@ -11,6 +12,7 @@ use crate::i18n::{fill, or_default, say, t};
 use crate::state::{AppState, Page, PairDoneReason, Panel, SiteConfig};
 use crate::timeout::Timeout;
 use leptos::prelude::*;
+use versus_shared::Outcome;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
@@ -18,6 +20,8 @@ use wasm_bindgen::prelude::*;
 const MILESTONES: [usize; 9] = [10, 25, 50, 100, 150, 200, 300, 500, 1000];
 /// How far a drag must go to pick, in pixels.
 const DRAG_PICK: f64 = 70.0;
+/// The badge between the cards, where a tie bursts.
+const VS: &str = "duel-vs";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Side {
@@ -46,6 +50,7 @@ fn card(side: Side) -> Option<web_sys::HtmlElement> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Fate {
     Picked(Side),
+    Tied,
     Skipped,
     Gone(Side),
 }
@@ -56,6 +61,7 @@ impl Fate {
         match self {
             Fate::Picked(s) if s == side => " won",
             Fate::Picked(_) => " lost",
+            Fate::Tied => " tied",
             Fate::Skipped => " skipped",
             Fate::Gone(s) if s == side => " gone",
             Fate::Gone(_) => "",
@@ -112,17 +118,36 @@ impl Moves {
         if !self.start() {
             return;
         }
-        let (winner, loser) = match side {
-            Side::A => (pair.a.id, pair.b.id),
-            Side::B => (pair.b.id, pair.a.id),
+        let (a, b) = (pair.a.id, pair.b.id);
+        let winner = match side {
+            Side::A => a,
+            Side::B => b,
         };
         // The vote first, the fireworks after: they may fail, it may not.
         self.play(Fate::Picked(side), 420, move |state| async move {
-            api::cast_vote(&state, winner, loser).await
+            api::cast_vote(&state, a, b, Outcome::Won(winner)).await
         });
         confetti::tap();
         if let Some((x, y)) = confetti::centre_of(side.card()) {
             confetti::burst(x, y, 18);
+        }
+    }
+
+    /// Neither is preferred: a vote all the same, half a win to each.
+    fn tie(&self) {
+        let Some(pair) = self.state.pair.get_untracked() else {
+            return;
+        };
+        if !self.start() {
+            return;
+        }
+        let (a, b) = (pair.a.id, pair.b.id);
+        self.play(Fate::Tied, 420, move |state| async move {
+            api::cast_vote(&state, a, b, Outcome::Tie).await
+        });
+        confetti::tap();
+        if let Some((x, y)) = confetti::centre_of(VS) {
+            confetti::burst(x, y, 10);
         }
     }
 
@@ -344,6 +369,7 @@ fn Arena(draw: u64, a: versus_shared::Film, b: versus_shared::Film, moves: Moves
     };
 
     let (down, over, up, cancel) = (moves.clone(), moves.clone(), moves.clone(), moves.clone());
+    let tie = moves.clone();
     // A drag the pointer abandons puts the cards back.
     let abandon = move |moves: &Moves| {
         if start_x.get_value().is_some() {
@@ -388,9 +414,13 @@ fn Arena(draw: u64, a: versus_shared::Film, b: versus_shared::Film, moves: Moves
             on:pointerleave=move |_| abandon(&moves)
         >
             {side_card(Side::A, a)}
-            <div class="vs" aria-hidden="true">"VS"</div>
+            <div class="vs" id=VS aria-hidden="true">"VS"</div>
             {side_card(Side::B, b)}
         </div>
+        <button class="tie-btn" on:click=move |_| tie.tie()>
+            {icon(Icon::Equal)}
+            <span>{t().tie}</span>
+        </button>
     }
 }
 
@@ -539,7 +569,7 @@ fn Done(reason: PairDoneReason) -> impl IntoView {
     }
 }
 
-/// ← and → pick, ↓ skips, Z undoes, while the duels are in view.
+/// ← and → pick, ↑ ties, ↓ skips, Z undoes, while the duels are in view.
 fn install_keys(moves: &Moves) {
     let moves = moves.clone();
     let on_key =
@@ -566,6 +596,7 @@ fn install_keys(moves: &Moves) {
             match ev.key().as_str() {
                 "ArrowLeft" => moves.pick(Side::A),
                 "ArrowRight" => moves.pick(Side::B),
+                "ArrowUp" => moves.tie(),
                 "ArrowDown" => moves.skip(),
                 "z" | "Z" => moves.undo(),
                 _ => return,

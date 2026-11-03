@@ -3,7 +3,7 @@ use crate::catalog::Catalog;
 use crate::config::SiteConfig;
 use crate::models::{PersistentData, UserState};
 use crate::throttle::Throttle;
-use versus_shared::{Film, LiveChange, LiveEvent, parse_pair_key};
+use versus_shared::{Film, LiveChange, LiveEvent, Outcome, parse_pair_key};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -142,23 +142,38 @@ impl AppState {
             r.score = 1.0;
             r.comparisons = 0;
             r.wins_against.clear();
+            r.ties_with.clear();
         }
         for (uid, state) in users.iter() {
             if banned.contains(uid) {
                 continue;
             }
-            for (key, &winner) in &state.vote_outcomes {
+            for (key, &outcome) in &state.vote_outcomes {
                 let Some((a, b)) = parse_pair_key(key) else {
                     continue;
                 };
-                let loser = if winner == a { b } else { a };
-                let w = ratings
-                    .entry(winner)
-                    .or_insert_with(|| BtRating::new(winner));
-                w.comparisons += 1;
-                *w.wins_against.entry(loser).or_insert(0) += 1;
-                let l = ratings.entry(loser).or_insert_with(|| BtRating::new(loser));
-                l.comparisons += 1;
+                for id in [a, b] {
+                    ratings
+                        .entry(id)
+                        .or_insert_with(|| BtRating::new(id))
+                        .comparisons += 1;
+                }
+                match outcome {
+                    Outcome::Won(winner) => {
+                        let loser = if winner == a { b } else { a };
+                        *ratings
+                            .get_mut(&winner)
+                            .unwrap()
+                            .wins_against
+                            .entry(loser)
+                            .or_insert(0) += 1;
+                    }
+                    Outcome::Tie => {
+                        for (x, y) in [(a, b), (b, a)] {
+                            *ratings.get_mut(&x).unwrap().ties_with.entry(y).or_insert(0) += 1;
+                        }
+                    }
+                }
             }
         }
         run_bradley_terry(ratings);

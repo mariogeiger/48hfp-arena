@@ -93,6 +93,16 @@ pub fn capitalize(s: &str) -> String {
     }
 }
 
+/// An item's wins, ties and losses, the ties told only when there are some.
+pub fn record(wins: u32, ties: u32, losses: u32) -> String {
+    let template = if ties == 0 {
+        t().board_record
+    } else {
+        t().board_record_ties
+    };
+    fill(template, &[("w", &wins), ("t", &ties), ("l", &losses)])
+}
+
 /// The site's own wording when it has one, else the language's.
 pub fn or_default(site: &str, words: &'static str) -> String {
     if site.is_empty() {
@@ -116,6 +126,7 @@ pub struct Words {
     pub vote_many: &'static str,
     pub undo: &'static str,
     pub skip: &'static str,
+    pub tie: &'static str,
     pub skip_unknown: &'static str,
     pub open_link: &'static str,
     pub done_none_heading: &'static str,
@@ -142,6 +153,7 @@ pub struct Words {
     pub board_unranked_title: &'static str,
     pub board_unranked: &'static str,
     pub board_record: &'static str,
+    pub board_record_ties: &'static str,
     pub overtook: &'static str,
 
     // Live events
@@ -167,6 +179,7 @@ pub struct Words {
     pub matrix_residual: &'static str,
     pub matrix_win: &'static str,
     pub matrix_loss: &'static str,
+    pub matrix_tie: &'static str,
     pub how_it_works_link: &'static str,
     pub source_code: &'static str,
 
@@ -325,6 +338,7 @@ pub static EN: Words = Words {
     vote_many: "votes",
     undo: "Undo",
     skip: "Skip",
+    tie: "Tie",
     skip_unknown: "Don\u{2019}t know",
     open_link: "Open",
     done_none_heading: "Pick your {items}",
@@ -349,6 +363,7 @@ pub static EN: Words = Words {
     board_unranked_title: "Not ranked yet",
     board_unranked: "They need more votes: shown in random order.",
     board_record: "{w}W \u{00B7} {l}L",
+    board_record_ties: "{w}W \u{00B7} {t}T \u{00B7} {l}L",
     overtook: "<strong>{a}</strong> overtook <strong>{b}</strong> \u{2192} #{n}",
 
     live_edited: "{title} was edited",
@@ -372,6 +387,7 @@ pub static EN: Words = Words {
     matrix_residual: "{a} vs {b}\nobserved {o}% / model {m}% ({r}%)",
     matrix_win: "W",
     matrix_loss: "L",
+    matrix_tie: "0",
     how_it_works_link: "How is it computed?",
     source_code: "Source code",
 
@@ -501,6 +517,7 @@ pub static FR: Words = Words {
     vote_many: "votes",
     undo: "Annuler",
     skip: "Passer",
+    tie: "\u{00C9}galit\u{00E9}",
     skip_unknown: "Connais pas",
     open_link: "Ouvrir",
     done_none_heading: "Choisis tes {items}",
@@ -525,6 +542,7 @@ pub static FR: Words = Words {
     board_unranked_title: "Pas encore class\u{00E9}s",
     board_unranked: "Il leur faut plus de votes\u{00A0}: ordre al\u{00E9}atoire.",
     board_record: "{w}V \u{00B7} {l}D",
+    board_record_ties: "{w}V \u{00B7} {t}N \u{00B7} {l}D",
     overtook: "<strong>{a}</strong> d\u{00E9}passe <strong>{b}</strong> \u{2192} n\u{00B0}{n}",
 
     live_edited: "{title} a \u{00E9}t\u{00E9} modifi\u{00E9}",
@@ -548,6 +566,7 @@ pub static FR: Words = Words {
     matrix_residual: "{a} contre {b}\nobserv\u{00E9} {o}\u{00A0}% / mod\u{00E8}le {m}\u{00A0}% ({r}\u{00A0}%)",
     matrix_win: "V",
     matrix_loss: "D",
+    matrix_tie: "0",
     how_it_works_link: "Comment c\u{2019}est calcul\u{00E9}\u{00A0}?",
     source_code: "Code source",
 

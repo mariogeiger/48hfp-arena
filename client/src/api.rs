@@ -5,6 +5,7 @@
 use crate::state::*;
 use leptos::prelude::*;
 use std::collections::HashMap;
+use versus_shared::Outcome;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -217,24 +218,26 @@ pub async fn load_pair(state: &AppState) {
     }
 }
 
-pub async fn cast_vote(state: &AppState, winner_id: usize, loser_id: usize) {
-    let _ = api_post(
-        "/api/vote",
-        &serde_json::json!({
-            "user_id": state.user_id,
-            "winner_id": winner_id,
-            "loser_id": loser_id,
-        }),
-    )
-    .await;
+/// The body that votes `outcome` on `a` and `b`, or takes the vote back.
+fn vote_body(state: &AppState, a: usize, b: usize, outcome: Outcome) -> serde_json::Value {
+    let (winner, loser) = match outcome {
+        Outcome::Won(w) if w == b => (b, a),
+        _ => (a, b),
+    };
+    serde_json::json!({
+        "user_id": state.user_id,
+        "winner_id": winner,
+        "loser_id": loser,
+        "tie": outcome == Outcome::Tie,
+    })
+}
 
-    state.vote_history.update(|h| {
-        h.push(VoteRecord {
-            winner_id,
-            loser_id,
-        });
-    });
-
+/// Vote `outcome` on the pair shown, `a` against `b`, then draw the next.
+pub async fn cast_vote(state: &AppState, a: usize, b: usize, outcome: Outcome) {
+    let _ = api_post("/api/vote", &vote_body(state, a, b, outcome)).await;
+    state
+        .vote_history
+        .update(|h| h.push(VoteRecord { a, b, outcome }));
     load_pair(state).await;
 }
 
@@ -246,17 +249,14 @@ pub async fn undo_vote(state: &AppState) {
 
     let _ = api_post(
         "/api/unvote",
-        &serde_json::json!({
-            "user_id": state.user_id,
-            "winner_id": last.winner_id,
-            "loser_id": last.loser_id,
-        }),
+        &vote_body(state, last.a, last.b, last.outcome),
     )
     .await;
 
+    // The pair comes back as it was shown.
     let films = state.films.get_untracked();
-    let a = films.iter().find(|f| f.id == last.winner_id).cloned();
-    let b = films.iter().find(|f| f.id == last.loser_id).cloned();
+    let a = films.iter().find(|f| f.id == last.a).cloned();
+    let b = films.iter().find(|f| f.id == last.b).cloned();
 
     state.vote_history.update(|h| {
         h.pop();
@@ -360,17 +360,10 @@ pub async fn load_mine(state: &AppState) {
     }
 }
 
-/// Set or take back a vote from a duel's sheet, then show the matrices anew.
-pub async fn matrix_action(state: &AppState, endpoint: &str, w: usize, l: usize) {
-    let _ = api_post(
-        endpoint,
-        &serde_json::json!({
-            "user_id": state.user_id,
-            "winner_id": w,
-            "loser_id": l,
-        }),
-    )
-    .await;
+/// Vote `outcome` on `a` and `b` from a duel's sheet, or with `/api/unvote`
+/// take the vote back, then show the matrices anew.
+pub async fn matrix_action(state: &AppState, endpoint: &str, a: usize, b: usize, outcome: Outcome) {
+    let _ = api_post(endpoint, &vote_body(state, a, b, outcome)).await;
     load_mine(state).await;
 }
 

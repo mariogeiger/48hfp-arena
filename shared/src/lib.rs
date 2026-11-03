@@ -69,6 +69,11 @@ pub enum LiveChange {
         winner: usize,
         loser: usize,
     },
+    /// Neither of the two won.
+    Tie {
+        a: usize,
+        b: usize,
+    },
     Unvote {
         winner: usize,
         loser: usize,
@@ -107,11 +112,72 @@ pub struct SelectionPayload {
     pub film_ids: Vec<usize>,
 }
 
+/// A vote: `winner_id` beat `loser_id`, or with `tie` neither won.
 #[derive(Deserialize)]
 pub struct VotePayload {
     pub user_id: String,
     pub winner_id: usize,
     pub loser_id: usize,
+    #[serde(default)]
+    pub tie: bool,
+}
+
+impl VotePayload {
+    pub fn outcome(&self) -> Outcome {
+        if self.tie {
+            Outcome::Tie
+        } else {
+            Outcome::Won(self.winner_id)
+        }
+    }
+}
+
+/// What a duel came to: the item that won it, or a tie, which counts as half
+/// a win to each. Kept as the winner's id, or the word `"tie"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "KeptOutcome", into = "KeptOutcome")]
+pub enum Outcome {
+    Won(usize),
+    Tie,
+}
+
+impl Outcome {
+    /// What the item `id` of the pair scored: 1 for a win, ½ for a tie, 0
+    /// for a loss.
+    pub fn score_of(self, id: usize) -> f64 {
+        match self {
+            Outcome::Won(winner) if winner == id => 1.0,
+            Outcome::Won(_) => 0.0,
+            Outcome::Tie => 0.5,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum KeptOutcome {
+    Won(usize),
+    Word(String),
+}
+
+impl From<Outcome> for KeptOutcome {
+    fn from(outcome: Outcome) -> Self {
+        match outcome {
+            Outcome::Won(id) => KeptOutcome::Won(id),
+            Outcome::Tie => KeptOutcome::Word("tie".into()),
+        }
+    }
+}
+
+impl TryFrom<KeptOutcome> for Outcome {
+    type Error = String;
+    fn try_from(kept: KeptOutcome) -> Result<Self, String> {
+        match kept {
+            KeptOutcome::Won(id) => Ok(Outcome::Won(id)),
+            KeptOutcome::Word(word) if word == "tie" => Ok(Outcome::Tie),
+            KeptOutcome::Word(word) => Err(format!("unknown outcome {word:?}")),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -230,4 +296,27 @@ pub fn pair_key(a: usize, b: usize) -> String {
 pub fn parse_pair_key(key: &str) -> Option<(usize, usize)> {
     let (a, b) = key.split_once(',')?;
     Some((a.parse().ok()?, b.parse().ok()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outcomes_keep_as_a_winner_or_the_word_tie() {
+        assert_eq!(serde_json::to_string(&Outcome::Won(7)).unwrap(), "7");
+        assert_eq!(serde_json::to_string(&Outcome::Tie).unwrap(), "\"tie\"");
+        assert_eq!(
+            serde_json::from_str::<Outcome>("7").unwrap(),
+            Outcome::Won(7)
+        );
+        assert_eq!(
+            serde_json::from_str::<Outcome>("\"tie\"").unwrap(),
+            Outcome::Tie
+        );
+        assert!(serde_json::from_str::<Outcome>("\"draw\"").is_err());
+        assert_eq!(Outcome::Won(7).score_of(7), 1.0);
+        assert_eq!(Outcome::Won(7).score_of(3), 0.0);
+        assert_eq!(Outcome::Tie.score_of(3), 0.5);
+    }
 }

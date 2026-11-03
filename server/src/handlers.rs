@@ -1,4 +1,4 @@
-use crate::bt::{BtRating, bt_score_to_display, fisher_pair_scores, run_bradley_terry};
+use crate::bt::{BtRating, bt_score_to_display, fisher_pair_scores};
 use crate::models::UserState;
 use crate::persistence::AppState;
 use versus_shared::*;
@@ -147,67 +147,35 @@ pub async fn vote(data: web::Data<AppState>, payload: web::Json<VotePayload>) ->
 
     let pair = canonical_pair(payload.winner_id, payload.loser_id);
     let key = pair_key(payload.winner_id, payload.loser_id);
+    let outcome = payload.outcome();
 
-    let prev_winner: Option<usize> = {
-        let users = data.users.lock().unwrap();
-        if let Some(user) = users.get(&payload.user_id) {
-            if user.compared_pairs.contains(&pair) {
-                if user.vote_outcomes.get(&key) == Some(&payload.winner_id) {
-                    return HttpResponse::Ok().json(serde_json::json!({"status": "already_voted"}));
-                }
-                user.vote_outcomes.get(&key).copied()
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    };
-
+    // The ratings follow from every outcome kept (lock order: bt_ratings ->
+    // users -> banned).
     {
         let mut ratings = data.bt_ratings.lock().unwrap();
-
-        if let Some(prev) = prev_winner {
-            let prev_loser = if prev == pair.0 { pair.1 } else { pair.0 };
-            if let Some(w) = ratings.get_mut(&prev) {
-                w.comparisons = w.comparisons.saturating_sub(1);
-                let entry = w.wins_against.entry(prev_loser).or_insert(0);
-                *entry = entry.saturating_sub(1);
-            }
-            if let Some(l) = ratings.get_mut(&prev_loser) {
-                l.comparisons = l.comparisons.saturating_sub(1);
-            }
-        }
-
-        let w = ratings
-            .entry(payload.winner_id)
-            .or_insert_with(|| BtRating::new(payload.winner_id));
-        w.comparisons += 1;
-        *w.wins_against.entry(payload.loser_id).or_insert(0) += 1;
-
-        let l = ratings
-            .entry(payload.loser_id)
-            .or_insert_with(|| BtRating::new(payload.loser_id));
-        l.comparisons += 1;
-
-        run_bradley_terry(&mut ratings);
-    }
-
-    {
         let mut users = data.users.lock().unwrap();
         let user = users.entry(payload.user_id.clone()).or_default();
+        if user.vote_outcomes.get(&key) == Some(&outcome) {
+            return HttpResponse::Ok().json(serde_json::json!({"status": "already_voted"}));
+        }
         user.compared_pairs.insert(pair);
-        user.vote_outcomes.insert(key, payload.winner_id);
+        user.vote_outcomes.insert(key, outcome);
+        let banned = data.banned.lock().unwrap();
+        AppState::recompute_ratings(&mut ratings, &users, &banned);
     }
 
     data.save();
-    data.broadcast(
-        &payload.user_id,
-        LiveChange::Vote {
-            winner: payload.winner_id,
-            loser: payload.loser_id,
+    let change = match outcome {
+        Outcome::Won(winner) => LiveChange::Vote {
+            winner,
+            loser: if winner == pair.0 { pair.1 } else { pair.0 },
         },
-    );
+        Outcome::Tie => LiveChange::Tie {
+            a: pair.0,
+            b: pair.1,
+        },
+    };
+    data.broadcast(&payload.user_id, change);
 
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
@@ -235,19 +203,12 @@ pub async fn unvote(data: web::Data<AppState>, payload: web::Json<UnvotePayload>
         }
         user.vote_outcomes
             .remove(&pair_key(payload.winner_id, payload.loser_id));
-
-        if let Some(w) = ratings.get_mut(&payload.winner_id) {
-            w.comparisons = w.comparisons.saturating_sub(1);
-            let entry = w.wins_against.entry(payload.loser_id).or_insert(0);
-            *entry = entry.saturating_sub(1);
-        }
-        if let Some(l) = ratings.get_mut(&payload.loser_id) {
-            l.comparisons = l.comparisons.saturating_sub(1);
-        }
-
-        run_bradley_terry(&mut ratings);
+        let banned = data.banned.lock().unwrap();
+        AppState::recompute_ratings(&mut ratings, &users, &banned);
     }
 
+    // One vote fewer is no data loss: the floor follows.
+    data.sync_vote_floor();
     data.save();
     data.broadcast(
         &payload.user_id,
@@ -377,9 +338,9 @@ pub async fn user_matrix(
     let votes: Vec<serde_json::Value> = user
         .vote_outcomes
         .iter()
-        .filter_map(|(key, &winner)| {
+        .filter_map(|(key, outcome)| {
             let (a, b) = parse_pair_key(key)?;
-            Some(serde_json::json!({"film_a": a, "film_b": b, "winner": winner}))
+            Some(serde_json::json!({"film_a": a, "film_b": b, "outcome": outcome}))
         })
         .collect();
 
@@ -387,7 +348,7 @@ pub async fn user_matrix(
         .compared_pairs
         .iter()
         .filter(|&&(a, b)| !user.vote_outcomes.contains_key(&pair_key(a, b)))
-        .map(|&(a, b)| serde_json::json!({"film_a": a, "film_b": b, "winner": null}))
+        .map(|&(a, b)| serde_json::json!({"film_a": a, "film_b": b}))
         .collect();
 
     HttpResponse::Ok().json(serde_json::json!({
@@ -418,6 +379,7 @@ pub async fn global_matrix(data: web::Data<AppState>) -> HttpResponse {
         .collect();
 
     let mut wins: Vec<serde_json::Value> = Vec::new();
+    let mut ties: Vec<serde_json::Value> = Vec::new();
     for &id in &film_ids {
         if let Some(r) = ratings.get(&id) {
             for (&loser, &count) in &r.wins_against {
@@ -425,10 +387,16 @@ pub async fn global_matrix(data: web::Data<AppState>) -> HttpResponse {
                     wins.push(serde_json::json!({"winner": id, "loser": loser, "count": count}));
                 }
             }
+            // Each tie once, from the item of the smaller id.
+            for (&other, &count) in &r.ties_with {
+                if count > 0 && id < other {
+                    ties.push(serde_json::json!({"a": id, "b": other, "count": count}));
+                }
+            }
         }
     }
 
-    HttpResponse::Ok().json(serde_json::json!({ "films": films, "wins": wins }))
+    HttpResponse::Ok().json(serde_json::json!({ "films": films, "wins": wins, "ties": ties }))
 }
 
 fn ranked_films<'a>(
@@ -488,6 +456,7 @@ pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
                 "video_url": film.map(|f| f.video_url.as_str()).unwrap_or(""),
                 "rating": bt_score_to_display(r.score),
                 "wins": r.wins(),
+                "ties": r.ties(),
                 "losses": r.losses(),
                 "comparisons": r.comparisons,
             })
@@ -545,7 +514,7 @@ pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
     let banned = data.banned.lock().unwrap();
     let ranked = ranked_films(&ratings, &users, &banned, data.min_votes, data.min_voters);
 
-    let mut csv = String::from("Rank,Title,Team,City,Rating,Wins,Losses,Comparisons\n");
+    let mut csv = String::from("Rank,Title,Team,City,Rating,Wins,Ties,Losses,Comparisons\n");
     for (i, r) in ranked
         .iter()
         .filter(|r| films.contains_key(&r.film_id))
@@ -556,13 +525,14 @@ pub async fn leaderboard_csv(data: web::Data<AppState>) -> HttpResponse {
         let team = film.map(|f| f.team.as_str()).unwrap_or("?");
         let city = film.map(|f| f.city.as_str()).unwrap_or("?");
         csv.push_str(&format!(
-            "{},\"{}\",\"{}\",\"{}\",{},{},{},{}\n",
+            "{},\"{}\",\"{}\",\"{}\",{},{},{},{},{}\n",
             i + 1,
             title.replace('"', "\"\""),
             team.replace('"', "\"\""),
             city.replace('"', "\"\""),
             bt_score_to_display(r.score),
             r.wins(),
+            r.ties(),
             r.losses(),
             r.comparisons,
         ));

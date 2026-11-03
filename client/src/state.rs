@@ -5,7 +5,7 @@
 use crate::i18n::Lang;
 use leptos::prelude::*;
 use std::collections::HashSet;
-use versus_shared::{Film, Proposal};
+use versus_shared::{Film, Outcome, Proposal, canonical_pair};
 
 /// Per-site configuration fetched once from `/api/config` before the app mounts.
 /// It never changes at runtime, so it is installed once as a plain global value:
@@ -182,10 +182,12 @@ pub struct FilmPair {
     pub b: Film,
 }
 
+/// A vote cast in the duels: the pair as it was shown, and what it came to.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoteRecord {
-    pub winner_id: usize,
-    pub loser_id: usize,
+    pub a: usize,
+    pub b: usize,
+    pub outcome: Outcome,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,6 +203,8 @@ pub struct LeaderboardEntry {
     pub title: String,
     pub rating: f64,
     pub wins: u32,
+    #[serde(default)]
+    pub ties: u32,
     pub losses: u32,
 }
 
@@ -230,7 +234,14 @@ pub struct MatrixFilm {
 pub struct MatrixVote {
     pub film_a: usize,
     pub film_b: usize,
-    pub winner: Option<usize>,
+    pub outcome: Outcome,
+}
+
+/// A pair compared before outcomes were recorded.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct MatrixPair {
+    pub film_a: usize,
+    pub film_b: usize,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -241,17 +252,97 @@ pub struct MatrixWin {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct MatrixTie {
+    pub a: usize,
+    pub b: usize,
+    pub count: u32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct UserMatrixData {
     pub films: Vec<MatrixFilm>,
     pub votes: Vec<MatrixVote>,
     #[serde(default)]
-    pub legacy_votes: Vec<MatrixVote>,
+    pub legacy_votes: Vec<MatrixPair>,
+}
+
+impl UserMatrixData {
+    /// What the viewer's duel of `a` and `b` came to, if they voted on it.
+    pub fn outcome(&self, a: usize, b: usize) -> Option<Outcome> {
+        self.votes
+            .iter()
+            .find(|v| canonical_pair(v.film_a, v.film_b) == canonical_pair(a, b))
+            .map(|v| v.outcome)
+    }
+
+    /// Whether the viewer compared `a` and `b` before outcomes were recorded.
+    pub fn compared_before(&self, a: usize, b: usize) -> bool {
+        self.legacy_votes
+            .iter()
+            .any(|v| canonical_pair(v.film_a, v.film_b) == canonical_pair(a, b))
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct GlobalMatrixData {
     pub films: Vec<MatrixFilm>,
     pub wins: Vec<MatrixWin>,
+    #[serde(default)]
+    pub ties: Vec<MatrixTie>,
+}
+
+impl GlobalMatrixData {
+    /// Everyone's duels, indexed by pair.
+    pub fn tally(&self) -> GlobalTally {
+        GlobalTally {
+            wins: self
+                .wins
+                .iter()
+                .map(|w| ((w.winner, w.loser), w.count))
+                .collect(),
+            ties: self
+                .ties
+                .iter()
+                .map(|t| (canonical_pair(t.a, t.b), t.count))
+                .collect(),
+            scores: self
+                .films
+                .iter()
+                .map(|f| (f.id, f.score.unwrap_or(1.0)))
+                .collect(),
+        }
+    }
+}
+
+/// Everyone's duels: what each item did against each other, and the
+/// strength the model gives it.
+pub struct GlobalTally {
+    wins: std::collections::HashMap<(usize, usize), u32>,
+    ties: std::collections::HashMap<(usize, usize), u32>,
+    scores: std::collections::HashMap<usize, f64>,
+}
+
+impl GlobalTally {
+    /// `a`'s wins over `b`, their ties, and `a`'s losses to `b`.
+    pub fn record(&self, a: usize, b: usize) -> (u32, u32, u32) {
+        let wins = |w, l| self.wins.get(&(w, l)).copied().unwrap_or(0);
+        let ties = self.ties.get(&canonical_pair(a, b)).copied().unwrap_or(0);
+        (wins(a, b), ties, wins(b, a))
+    }
+
+    /// What `a` scored against `b`, a tie counting half: none if they never
+    /// met.
+    pub fn share(&self, a: usize, b: usize) -> Option<f64> {
+        let (w, t, l) = self.record(a, b);
+        let n = w + t + l;
+        (n > 0).then(|| (w as f64 + 0.5 * t as f64) / n as f64)
+    }
+
+    /// The chance the model gives `a` against `b`.
+    pub fn chance(&self, a: usize, b: usize) -> f64 {
+        let score = |id| self.scores.get(&id).copied().unwrap_or(1.0);
+        score(a) / (score(a) + score(b))
+    }
 }
 
 /// The Google account this identity signs in with, as the viewer sees it.

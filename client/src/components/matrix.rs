@@ -24,6 +24,8 @@ struct Colors {
     diag: String,
     legacy: String,
     legacy_bg: String,
+    tie: String,
+    tie_bg: String,
 }
 
 fn get_colors() -> Colors {
@@ -56,6 +58,8 @@ fn get_colors() -> Colors {
         diag: g("--matrix-diag"),
         legacy: g("--matrix-legacy"),
         legacy_bg: g("--matrix-legacy-bg"),
+        tie: g("--matrix-tie"),
+        tie_bg: g("--matrix-tie-bg"),
     }
 }
 
@@ -72,6 +76,7 @@ fn short_title(t: &str) -> String {
 pub enum CellBg {
     Win,
     Loss,
+    Tie,
     Legacy,
     Empty,
     Residual(f64),
@@ -222,6 +227,7 @@ pub fn render_matrix_canvas(container_id: &str, config: MatrixConfig) {
             let bg = match &info.bg {
                 CellBg::Win => Some(c.win_bg.clone()),
                 CellBg::Loss => Some(c.loss_bg.clone()),
+                CellBg::Tie => Some(c.tie_bg.clone()),
                 CellBg::Legacy => Some(c.legacy_bg.clone()),
                 CellBg::Empty => None,
                 CellBg::Residual(r) => Some(residual_color(*r)),
@@ -234,6 +240,7 @@ pub fn render_matrix_canvas(container_id: &str, config: MatrixConfig) {
                 let fg = match &info.bg {
                     CellBg::Win => &c.win,
                     CellBg::Loss => &c.loss,
+                    CellBg::Tie => &c.tie,
                     CellBg::Legacy => &c.legacy,
                     CellBg::Empty => &c.text,
                     CellBg::Residual(_) => &c.text,

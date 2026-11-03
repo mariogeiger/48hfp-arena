@@ -11,6 +11,7 @@ pub enum Icon {
     User,
     Undo,
     Skip,
+    Equal,
     EyeOff,
     Shuffle,
     Target,
@@ -45,6 +46,9 @@ impl Icon {
             }
             Icon::User => r#"<circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/>"#,
             Icon::Undo => r#"<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>"#,
+            Icon::Equal => {
+                r#"<line x1="5" x2="19" y1="9" y2="9"/><line x1="5" x2="19" y1="15" y2="15"/>"#
+            }
             Icon::Skip => {
                 r#"<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/>"#
             }

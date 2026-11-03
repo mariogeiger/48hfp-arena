@@ -36,6 +36,8 @@
   --matrix-neutral: #e8e4ed;
   --matrix-legacy: #b8860b;
   --matrix-legacy-bg: #fdf3dc;
+  --matrix-tie: #6f6080;
+  --matrix-tie-bg: #ddd7e6;
 
   /* Shapes and motion */
   --font: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;

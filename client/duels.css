@@ -1,5 +1,5 @@
-/* The duels: the two cards and their VS, the chips above, undo, the
-   tally and skip below, and what shows once no duel is left. */
+/* The duels: the two cards and their VS, the tie button under them, the
+   chips above, undo, the tally and skip below, and what shows once no duel is left. */
 
 body.duels-active {
   overflow: hidden;
@@ -119,6 +119,14 @@ body.duels-active {
     transform: scale(0) rotate(-30deg);
   }
 }
+.duels .duel-card.tied {
+  z-index: 2;
+  transform: scale(1.03) rotate(var(--tilt));
+  box-shadow:
+    0 0 0 4px var(--matrix-tie),
+    0 14px 40px rgb(111 96 128 / 40%);
+  animation: none;
+}
 .duel-card.lost {
   opacity: 0;
   transform: translateY(40px) scale(0.85) rotate(calc(var(--tilt) * -2));
@@ -137,7 +145,7 @@ body.duels-active {
 .card-art {
   display: flex;
   align-items: center;
-  max-height: calc(100dvh - var(--header-h) - var(--tabbar-h) - 290px);
+  max-height: calc(100dvh - var(--header-h) - var(--tabbar-h) - 340px);
   border-radius: 17px;
   overflow: hidden;
 }
@@ -240,6 +248,39 @@ body.duels-active {
   from {
     transform: translate(-50%, -50%) scale(0) rotate(-120deg);
   }
+}
+.tie-btn {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: var(--shadow-s);
+  animation: pop-in 0.4s var(--spring) 0.1s both;
+}
+@media (hover: hover) {
+  .tie-btn:hover {
+    color: var(--text-strong);
+    border-color: var(--matrix-tie);
+  }
+}
+.tie-btn:active {
+  transform: scale(0.95);
+}
+.tie-btn.on {
+  color: var(--text-strong);
+  border-color: var(--matrix-tie);
+  background: var(--matrix-tie-bg);
+}
+.tie-btn .icon {
+  width: 17px;
+  height: 17px;
 }
 .arena-loading .ghost {
   min-height: 320px;

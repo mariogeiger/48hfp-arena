@@ -9,6 +9,9 @@ pub struct BtRating {
     pub comparisons: u32,
     /// Pairwise win counts: film_id → number of times this film beat that film.
     pub wins_against: HashMap<usize, u32>,
+    /// Pairwise tie counts: film_id → number of times this film tied with it.
+    #[serde(default)]
+    pub ties_with: HashMap<usize, u32>,
 }
 
 impl BtRating {
@@ -18,17 +21,34 @@ impl BtRating {
             score: 1.0,
             comparisons: 0,
             wins_against: HashMap::new(),
+            ties_with: HashMap::new(),
         }
     }
     pub fn wins(&self) -> u32 {
         self.wins_against.values().sum()
     }
+    pub fn ties(&self) -> u32 {
+        self.ties_with.values().sum()
+    }
     pub fn losses(&self) -> u32 {
-        self.comparisons - self.wins()
+        self.comparisons - self.wins() - self.ties()
+    }
+    /// What the duels earned it, a tie counting half a win.
+    pub fn points(&self) -> f64 {
+        self.wins() as f64 + 0.5 * self.ties() as f64
+    }
+    /// How many duels it fought against `other`.
+    pub fn duels_with(&self, other: &BtRating) -> u32 {
+        let count = |m: &HashMap<usize, u32>, id: usize| m.get(&id).copied().unwrap_or(0);
+        count(&self.wins_against, other.film_id)
+            + count(&other.wins_against, self.film_id)
+            + count(&self.ties_with, other.film_id)
     }
 }
 
-/// Run the Bradley-Terry MM algorithm to convergence.
+/// Run the Bradley-Terry MM algorithm to convergence. A tie counts as half a
+/// win to each side, which is the maximum of the likelihood where a tie
+/// weighs as much as the geometric mean of the two ways to win.
 pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
     let active_ids: Vec<usize> = ratings
         .values()
@@ -41,7 +61,7 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
     }
 
     for &id in &active_ids {
-        if ratings[&id].wins() == 0 {
+        if ratings[&id].points() == 0.0 {
             ratings.get_mut(&id).unwrap().score = 1e-6;
         }
     }
@@ -49,7 +69,7 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
     let ranked_ids: Vec<usize> = active_ids
         .iter()
         .copied()
-        .filter(|&id| ratings[&id].wins() > 0)
+        .filter(|&id| ratings[&id].points() > 0.0)
         .collect();
 
     if ranked_ids.is_empty() {
@@ -71,15 +91,14 @@ pub fn run_bradley_terry(ratings: &mut HashMap<usize, BtRating>) {
         let mut max_rel_change = 0.0_f64;
 
         for &i in &ranked_ids {
-            let w_i = ratings[&i].wins() as f64;
+            let w_i = ratings[&i].points();
             let score_i = old_scores[idx[&i]];
 
             let denom: f64 = active_ids
                 .iter()
                 .filter(|&&j| j != i)
                 .filter_map(|&j| {
-                    let n_ij = ratings[&i].wins_against.get(&j).copied().unwrap_or(0) as f64
-                        + ratings[&j].wins_against.get(&i).copied().unwrap_or(0) as f64;
+                    let n_ij = ratings[&i].duels_with(&ratings[&j]) as f64;
                     if n_ij > 0.0 {
                         Some(n_ij / (score_i + old_scores[idx[&j]]))
                     } else {
@@ -140,15 +159,10 @@ pub fn fisher_pair_scores(
             let id_i = film_ids[i];
             let id_j = film_ids[j];
 
-            let wins_ij = ratings
-                .get(&id_i)
-                .and_then(|r| r.wins_against.get(&id_j).copied())
-                .unwrap_or(0);
-            let wins_ji = ratings
-                .get(&id_j)
-                .and_then(|r| r.wins_against.get(&id_i).copied())
-                .unwrap_or(0);
-            let n_ij = wins_ij + wins_ji;
+            let n_ij = match (ratings.get(&id_i), ratings.get(&id_j)) {
+                (Some(r_i), Some(r_j)) => r_i.duels_with(r_j),
+                _ => 0,
+            };
             if n_ij == 0 {
                 continue;
             }
@@ -238,4 +252,56 @@ fn invert_matrix(mat: &[f64], n: usize) -> Vec<f64> {
         }
     }
     inv
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ratings(wins: &[(usize, usize)], ties: &[(usize, usize)]) -> HashMap<usize, BtRating> {
+        let mut ratings: HashMap<usize, BtRating> = HashMap::new();
+        for &(w, l) in wins {
+            for id in [w, l] {
+                ratings
+                    .entry(id)
+                    .or_insert_with(|| BtRating::new(id))
+                    .comparisons += 1;
+            }
+            *ratings
+                .get_mut(&w)
+                .unwrap()
+                .wins_against
+                .entry(l)
+                .or_insert(0) += 1;
+        }
+        for &(a, b) in ties {
+            for (x, y) in [(a, b), (b, a)] {
+                let r = ratings.entry(x).or_insert_with(|| BtRating::new(x));
+                r.comparisons += 1;
+                *r.ties_with.entry(y).or_insert(0) += 1;
+            }
+        }
+        run_bradley_terry(&mut ratings);
+        ratings
+    }
+
+    #[test]
+    fn two_ties_weigh_as_a_win_each_way() {
+        // 1 beats 2 and is beaten by 3; 2 and 3 meet twice.
+        let split = ratings(&[(1, 2), (3, 1), (2, 3), (3, 2)], &[]);
+        let tied = ratings(&[(1, 2), (3, 1)], &[(2, 3), (2, 3)]);
+        for id in [1, 2, 3] {
+            assert!((split[&id].score - tied[&id].score).abs() < 1e-6);
+        }
+        assert_eq!(tied[&2].ties(), 2);
+        assert_eq!(tied[&2].losses(), 1);
+        assert_eq!(tied[&2].points(), 1.0);
+    }
+
+    #[test]
+    fn only_ties_rank_alike() {
+        let tied = ratings(&[], &[(1, 2)]);
+        assert!((tied[&1].score - tied[&2].score).abs() < 1e-9);
+        assert!(tied[&1].score > 1e-3);
+    }
 }

@@ -152,8 +152,8 @@ fn fold(into: &mut UserState, from: UserState) {
     for pair in from.compared_pairs {
         if into.compared_pairs.insert(pair) {
             let key = pair_key(pair.0, pair.1);
-            if let Some(&winner) = from.vote_outcomes.get(&key) {
-                into.vote_outcomes.insert(key, winner);
+            if let Some(&outcome) = from.vote_outcomes.get(&key) {
+                into.vote_outcomes.insert(key, outcome);
             }
         }
     }
@@ -173,6 +173,7 @@ fn fold(into: &mut UserState, from: UserState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use versus_shared::Outcome;
 
     fn voter(votes: &[(usize, usize, usize)], seen: &[usize], name: Option<&str>) -> UserState {
         let mut user = UserState {
@@ -183,7 +184,8 @@ mod tests {
         for &(a, b, winner) in votes {
             user.compared_pairs
                 .insert(versus_shared::canonical_pair(a, b));
-            user.vote_outcomes.insert(pair_key(a, b), winner);
+            user.vote_outcomes
+                .insert(pair_key(a, b), Outcome::Won(winner));
         }
         user
     }
@@ -194,9 +196,9 @@ mod tests {
         let from = voter(&[(2, 1, 2), (3, 4, 4)], &[3, 4], Some("Laptop"));
         fold(&mut into, from);
         assert_eq!(into.compared_pairs.len(), 3);
-        assert_eq!(into.vote_outcomes[&pair_key(1, 2)], 1);
-        assert_eq!(into.vote_outcomes[&pair_key(2, 3)], 3);
-        assert_eq!(into.vote_outcomes[&pair_key(3, 4)], 4);
+        assert_eq!(into.vote_outcomes[&pair_key(1, 2)], Outcome::Won(1));
+        assert_eq!(into.vote_outcomes[&pair_key(2, 3)], Outcome::Won(3));
+        assert_eq!(into.vote_outcomes[&pair_key(3, 4)], Outcome::Won(4));
         assert_eq!(into.seen_films, vec![1, 2, 3, 4]);
         assert_eq!(into.name.as_deref(), Some("Tom"));
     }
