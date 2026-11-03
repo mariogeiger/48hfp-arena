@@ -224,6 +224,12 @@ pub struct Words {
     pub handoff_already: &'static str,
     pub handoff_unknown: &'static str,
     pub handoff_invalid: &'static str,
+    pub google_hint: &'static str,
+    pub google_signed_in: &'static str,
+    pub google_sign_out: &'static str,
+    pub google_sign_out_confirm: &'static str,
+    pub google_failed: &'static str,
+    pub session_or_link: &'static str,
 
     // Wiki
     pub sheet_close: &'static str,
@@ -418,6 +424,12 @@ pub static EN: Words = Words {
     handoff_already: "This link is your own session.",
     handoff_unknown: "This link names no session.",
     handoff_invalid: "This link is broken.",
+    google_hint: "Sign in with Google to find your votes on all your devices.",
+    google_signed_in: "Signed in with Google ({email}): your votes follow you on all your devices.",
+    google_sign_out: "Sign out on this device",
+    google_sign_out_confirm: "This device will start afresh; your votes stay with your Google account, which signing in finds again.",
+    google_failed: "Signing in with Google failed.",
+    session_or_link: "Or share a link to your session:",
 
     sheet_close: "Close",
     sheet_edit: "Edit",
@@ -589,6 +601,12 @@ pub static FR: Words = Words {
     handoff_already: "Ce lien est ta propre session.",
     handoff_unknown: "Ce lien ne m\u{00E8}ne \u{00E0} aucune session.",
     handoff_invalid: "Ce lien est cass\u{00E9}.",
+    google_hint: "Connecte-toi avec Google pour retrouver tes votes sur tous tes appareils.",
+    google_signed_in: "Connect\u{00E9} avec Google ({email})\u{00A0}: tes votes te suivent sur tous tes appareils.",
+    google_sign_out: "Me d\u{00E9}connecter sur cet appareil",
+    google_sign_out_confirm: "Cet appareil repartira de z\u{00E9}ro\u{00A0}; tes votes restent li\u{00E9}s \u{00E0} ton compte Google, que tu retrouves en te reconnectant.",
+    google_failed: "La connexion avec Google a \u{00E9}chou\u{00E9}.",
+    session_or_link: "Ou partage un lien vers ta session\u{00A0}:",
 
     sheet_close: "Fermer",
     sheet_edit: "Modifier",

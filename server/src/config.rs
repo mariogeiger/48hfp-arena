@@ -158,6 +158,14 @@ pub struct SiteConfig {
     /// URL behind the GitHub icon in the nav.
     #[serde(default)]
     pub source_url: String,
+
+    // ---- signing in with Google ----
+    /// The site's OAuth client ID; empty offers no Google sign-in.
+    #[serde(default)]
+    pub google_client_id: String,
+    /// Google's public keys (a JWK set), kept fresh by the host.
+    #[serde(default = "default_google_keys")]
+    pub google_keys: String,
 }
 
 fn default_true() -> bool {
@@ -193,6 +201,9 @@ fn default_edits_path() -> String {
 fn default_uploads_dir() -> String {
     "uploads".into()
 }
+fn default_google_keys() -> String {
+    "google-keys.json".into()
+}
 fn default_noun() -> String {
     "item".into()
 }
@@ -227,6 +238,7 @@ impl SiteConfig {
             "link_label": self.link_label,
             "unranked_banner": self.unranked_banner,
             "source_url": self.source_url,
+            "google_client_id": self.google_client_id,
             "editable": self.editable,
             "min_votes": self.min_votes,
             "min_voters": self.min_voters,

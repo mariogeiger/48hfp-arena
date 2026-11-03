@@ -2,6 +2,7 @@ mod bt;
 mod catalog;
 mod config;
 mod csv;
+mod google;
 mod handlers;
 mod identity;
 mod models;
@@ -53,6 +54,10 @@ async fn main() -> std::io::Result<()> {
     // Config the browser needs, precomputed once and served at /api/config.
     let client_config = web::Data::new(cfg.client_json());
     let columns = web::Data::new(cfg.columns.clone());
+    let google = web::Data::new(google::Google {
+        client_id: cfg.google_client_id.clone(),
+        keys_path: cfg.google_keys.clone(),
+    });
     let port = cfg.port;
     let client_dist = cfg.client_dist.clone();
 
@@ -71,6 +76,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(state.clone())
             .app_data(client_config.clone())
             .app_data(columns.clone())
+            .app_data(google.clone())
             .app_data(web::PayloadConfig::new(wiki::MAX_UPLOAD))
             .wrap(middleware::Logger::new("%{r}a \"%r\" %s %b %Dms"))
             // Revalidate everything (ETags make it cheap), so a deploy reaches
@@ -91,6 +97,10 @@ async fn main() -> std::io::Result<()> {
             .route("/api/identity", web::get().to(identity::identity))
             .route("/api/identity/name", web::post().to(identity::set_name))
             .route("/api/identity/merge", web::post().to(identity::merge))
+            .route(
+                "/api/identity/google",
+                web::post().to(identity::sign_in_with_google),
+            )
             .route("/api/selection", web::post().to(handlers::set_selection))
             .route("/api/pair", web::get().to(handlers::get_pair))
             .route("/api/vote", web::post().to(handlers::vote))

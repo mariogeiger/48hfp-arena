@@ -146,6 +146,13 @@ pub struct MergePayload {
     pub into: String,
 }
 
+/// An ID token Google gave the browser of `user_id`.
+#[derive(Deserialize)]
+pub struct GooglePayload {
+    pub user_id: String,
+    pub credential: String,
+}
+
 #[derive(Deserialize)]
 pub struct EditPayload {
     pub user_id: String,

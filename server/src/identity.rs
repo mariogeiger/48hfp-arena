@@ -1,13 +1,15 @@
 //! An identity is the UUID a browser keeps; whoever holds it votes as it.
 //! Here an identity gets a private name, so that a link carrying it can ask
-//! "are you Tom?", and one identity folds into another when a device takes
-//! up the session of another.
+//! "are you Tom?", and a Google account, so that signing in finds it again.
+//! One identity folds into another when a device takes up another's session.
 
+use crate::google::Google;
 use crate::models::UserState;
 use crate::persistence::AppState;
-use versus_shared::{MergePayload, NamePayload, UserQuery, pair_key};
+use versus_shared::{GooglePayload, MergePayload, NamePayload, UserQuery, pair_key};
 
 use actix_web::{HttpResponse, web};
+use std::collections::HashMap;
 
 const MAX_NAME_CHARS: usize = 40;
 
@@ -18,6 +20,7 @@ pub async fn identity(data: web::Data<AppState>, query: web::Query<UserQuery>) -
         Some(user) => HttpResponse::Ok().json(serde_json::json!({
             "name": user.name,
             "votes": user.compared_pairs.len(),
+            "google": user.google.as_ref().map(|g| &g.email),
         })),
         None => HttpResponse::NotFound().json(serde_json::json!({"error": "unknown_user"})),
     }
@@ -40,9 +43,8 @@ pub async fn set_name(data: web::Data<AppState>, payload: web::Json<NamePayload>
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
-/// Fold the identity `user_id` into `into` and forget it. `into` keeps its
-/// votes and gains the pairs only `user_id` compared; their selections join.
-/// Answers with the selection of the merged identity.
+/// Fold the identity `user_id` into `into`, which a link offered. Answers
+/// with the selection of the merged identity.
 pub async fn merge(data: web::Data<AppState>, payload: web::Json<MergePayload>) -> HttpResponse {
     if data.is_banned(&payload.user_id) || data.is_banned(&payload.into) {
         return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
@@ -54,17 +56,10 @@ pub async fn merge(data: web::Data<AppState>, payload: web::Json<MergePayload>) 
         if !users.contains_key(&payload.into) {
             return HttpResponse::NotFound().json(serde_json::json!({"error": "unknown_user"}));
         }
-        let from = if payload.user_id == payload.into {
-            UserState::default()
-        } else {
-            users.remove(&payload.user_id).unwrap_or_default()
-        };
-        let into = users.get_mut(&payload.into).unwrap();
-        fold(into, from);
-        let selection = into.seen_films.clone();
+        absorb(&mut users, &payload.user_id, &payload.into);
         let banned = data.banned.lock().unwrap();
         AppState::recompute_ratings(&mut ratings, &users, &banned);
-        selection
+        users[&payload.into].seen_films.clone()
     };
     // A pair both identities compared now counts once.
     data.sync_vote_floor();
@@ -72,8 +67,75 @@ pub async fn merge(data: web::Data<AppState>, payload: web::Json<MergePayload>) 
     HttpResponse::Ok().json(serde_json::json!({"selection": selection}))
 }
 
+/// Sign in with the Google account an ID token names. The identity that
+/// account already signs in as is the one to continue, and this device's
+/// identity folds into it unless another account holds it; an account seen
+/// for the first time takes this device's identity, or a new one if another
+/// account holds it. Answers with the identity to continue and its selection.
+pub async fn sign_in_with_google(
+    data: web::Data<AppState>,
+    google: web::Data<Google>,
+    payload: web::Json<GooglePayload>,
+) -> HttpResponse {
+    if data.is_banned(&payload.user_id) {
+        return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
+    }
+    let account = match google.verify(&payload.credential) {
+        Ok(account) => account,
+        Err(code) => {
+            log::warn!("Google sign-in refused: {code}");
+            return HttpResponse::Unauthorized().json(serde_json::json!({"error": code}));
+        }
+    };
+    let (user_id, selection) = {
+        // Lock order: bt_ratings -> users.
+        let mut ratings = data.bt_ratings.lock().unwrap();
+        let mut users = data.users.lock().unwrap();
+        let owner = users
+            .iter()
+            .find(|(_, u)| u.google.as_ref().is_some_and(|g| g.sub == account.sub))
+            .map(|(id, _)| id.clone());
+        let device_free = users
+            .get(&payload.user_id)
+            .is_none_or(|u| u.google.is_none());
+        let user_id = match owner {
+            Some(owner) => {
+                if data.is_banned(&owner) {
+                    return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
+                }
+                if device_free {
+                    absorb(&mut users, &payload.user_id, &owner);
+                }
+                owner
+            }
+            None if device_free => payload.user_id.clone(),
+            None => uuid::Uuid::new_v4().to_string(),
+        };
+        let user = users.entry(user_id.clone()).or_default();
+        // The e-mail may have changed since.
+        user.google = Some(account);
+        let selection = user.seen_films.clone();
+        let banned = data.banned.lock().unwrap();
+        AppState::recompute_ratings(&mut ratings, &users, &banned);
+        (user_id, selection)
+    };
+    data.sync_vote_floor();
+    data.save();
+    HttpResponse::Ok().json(serde_json::json!({"user_id": user_id, "selection": selection}))
+}
+
+/// Fold the identity `from` into `into`, which it becomes, and forget it.
+fn absorb(users: &mut HashMap<String, UserState>, from: &str, into: &str) {
+    if from == into {
+        return;
+    }
+    let from = users.remove(from).unwrap_or_default();
+    fold(users.entry(into.to_string()).or_default(), from);
+}
+
 /// `into` with what only `from` has: the pairs it compared, with their
-/// outcomes, the items it selected, and its name if `into` has none.
+/// outcomes, the items it selected, and its name and Google account if
+/// `into` has none.
 fn fold(into: &mut UserState, from: UserState) {
     for pair in from.compared_pairs {
         if into.compared_pairs.insert(pair) {
@@ -90,6 +152,9 @@ fn fold(into: &mut UserState, from: UserState) {
     }
     if into.name.is_none() {
         into.name = from.name;
+    }
+    if into.google.is_none() {
+        into.google = from.google;
     }
 }
 

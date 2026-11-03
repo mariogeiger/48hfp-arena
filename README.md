@@ -70,3 +70,4 @@ cd client && trunk serve
 | `/api/identity` | GET | An identity's private name and vote count |
 | `/api/identity/name` | POST | Name one's identity |
 | `/api/identity/merge` | POST | Fold one's identity into another (continuing a session) |
+| `/api/identity/google` | POST | Sign in with a Google ID token |

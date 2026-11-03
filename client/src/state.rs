@@ -35,6 +35,9 @@ pub struct SiteConfig {
     pub unranked_banner: String,
     #[serde(default)]
     pub source_url: String,
+    /// The site's Google OAuth client ID; empty offers no Google sign-in.
+    #[serde(default)]
+    pub google_client_id: String,
     #[serde(default)]
     pub editable: bool,
     #[serde(default)]
@@ -99,6 +102,7 @@ impl Default for SiteConfig {
             link_label: String::new(),
             unranked_banner: String::new(),
             source_url: String::new(),
+            google_client_id: String::new(),
             editable: false,
             lang: Lang::En,
             fields: FieldNames::default(),
@@ -272,6 +276,8 @@ pub struct AppState {
 
     /// The private name of this identity, once known.
     pub user_name: RwSignal<Option<String>>,
+    /// The e-mail of the Google account that signs in as this identity, if any.
+    pub google_email: RwSignal<Option<String>>,
     /// Another identity a link offers to continue, awaiting the viewer's answer.
     pub handoff: RwSignal<Option<Handoff>>,
 
@@ -343,6 +349,7 @@ impl AppState {
             duel: RwSignal::new(None),
 
             user_name: RwSignal::new(None),
+            google_email: RwSignal::new(None),
             handoff: RwSignal::new(None),
 
             user_id,

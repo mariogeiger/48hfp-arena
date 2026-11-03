@@ -1,11 +1,13 @@
 //! The identity's two faces in the interface: the section of the More page
-//! that names it and shares the link continuing it, and the question a
-//! `#continue/…` link asks before this device takes up that identity.
+//! that signs it in with Google, names it and shares the link continuing it,
+//! and the question a `#continue/…` link asks before this device takes up
+//! that identity.
 
 use crate::i18n::{fill, t};
 use crate::identity;
-use crate::state::AppState;
+use crate::state::{AppState, SiteConfig};
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
 #[component]
 pub fn SessionSection() -> impl IntoView {
@@ -59,9 +61,12 @@ pub fn SessionSection() -> impl IntoView {
         })
     };
 
+    let google = (!SiteConfig::get().google_client_id.is_empty()).then(GoogleSignIn);
+
     view! {
         <div class="stats-section session-section">
             <h3>{t().session_heading}</h3>
+            {google}
             <p class="matrix-hint">{t().session_hint}</p>
             <div class="session-name">
                 <input
@@ -89,6 +94,50 @@ pub fn SessionSection() -> impl IntoView {
                 })
             }}
             {shared}
+        </div>
+    }
+}
+
+/// Google's button, or the account signed in and the way out.
+#[component]
+fn GoogleSignIn() -> impl IntoView {
+    let state = use_context::<AppState>().unwrap();
+    let button = NodeRef::<leptos::html::Div>::new();
+
+    Effect::new({
+        let state = state.clone();
+        move || {
+            if let Some(div) = button.get() {
+                crate::google::render_button(&state, div.unchecked_into());
+            }
+        }
+    });
+
+    view! {
+        <div class="session-google">
+            {move || match state.google_email.get() {
+                Some(email) => view! {
+                    <p class="matrix-hint">{fill(t().google_signed_in, &[("email", &email)])}</p>
+                    <button
+                        class="session-sign-out"
+                        on:click=move |_| {
+                            let window = web_sys::window().unwrap();
+                            if window.confirm_with_message(t().google_sign_out_confirm).unwrap_or(false) {
+                                identity::sign_out();
+                            }
+                        }
+                    >
+                        {t().google_sign_out}
+                    </button>
+                }
+                .into_any(),
+                None => view! {
+                    <p class="matrix-hint">{t().google_hint}</p>
+                    <div class="google-button" node_ref=button></div>
+                    <p class="matrix-hint">{t().session_or_link}</p>
+                }
+                .into_any(),
+            }}
         </div>
     }
 }

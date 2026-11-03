@@ -1,6 +1,7 @@
 //! This browser's identity on the server: its private name, the link that
-//! continues it on another device, and taking up the identity such a link
-//! offers, which folds this device's votes into it.
+//! continues it on another device, taking up the identity such a link or a
+//! Google account offers, which folds this device's votes into it, and
+//! leaving it.
 
 use crate::api::{get, post};
 use crate::i18n::t;
@@ -12,15 +13,19 @@ use wasm_bindgen_futures::JsFuture;
 struct Identity {
     name: Option<String>,
     votes: usize,
+    #[serde(default)]
+    google: Option<String>,
 }
 
 async fn identity(user_id: &str) -> Option<Identity> {
     get(&format!("/api/identity?user_id={user_id}")).await
 }
 
-pub async fn load_name(state: &AppState) {
-    let name = identity(&state.user_id).await.and_then(|i| i.name);
+pub async fn load_identity(state: &AppState) {
+    let identity = identity(&state.user_id).await;
+    let (name, google) = identity.map_or((None, None), |i| (i.name, i.google));
     state.user_name.set(name);
+    state.google_email.set(google);
 }
 
 pub async fn save_name(state: &AppState, name: &str) -> Result<(), String> {
@@ -99,13 +104,43 @@ pub async fn offer_handoff(state: &AppState, other: &str) {
     }));
 }
 
-/// Fold this identity into the one offered and become it: the page reloads
-/// as that identity, with its selection.
+/// Fold this identity into the one offered and become it.
 pub async fn accept_handoff(state: &AppState, handoff: &Handoff) -> Result<(), String> {
     let body = serde_json::json!({ "user_id": state.user_id, "into": handoff.user_id });
     let answer = post("/api/identity/merge", body).await?;
-    let selection: Vec<usize> =
-        serde_json::from_value(answer["selection"].clone()).unwrap_or_default();
+    become_identity(state, &handoff.user_id, &answer["selection"])
+}
+
+/// Sign in with the Google account an ID token names: the server answers
+/// with the identity to continue, this one or the one the account had.
+pub async fn sign_in_with_google(state: &AppState, credential: &str) -> Result<(), String> {
+    let body = serde_json::json!({ "user_id": state.user_id, "credential": credential });
+    let answer = post("/api/identity/google", body).await?;
+    let user_id = answer["user_id"].as_str().unwrap_or_default();
+    if user_id == state.user_id {
+        load_identity(state).await;
+        Ok(())
+    } else {
+        become_identity(state, user_id, &answer["selection"])
+    }
+}
+
+/// Leave this identity: the page reloads as a new, empty one. The votes
+/// stay with the identity, which signing in finds again.
+pub fn sign_out() {
+    let window = web_sys::window().unwrap();
+    let storage = window.local_storage().unwrap().unwrap();
+    let _ = storage.remove_item(USER_ID_KEY);
+    let _ = window.location().reload();
+}
+
+/// Become the identity `user_id`, with its `selection`: the page reloads as it.
+fn become_identity(
+    state: &AppState,
+    user_id: &str,
+    selection: &serde_json::Value,
+) -> Result<(), String> {
+    let selection: Vec<usize> = serde_json::from_value(selection.clone()).unwrap_or_default();
     if SiteConfig::get().require_selection && !selection.is_empty() {
         state.selected_ids.set(selection.into_iter().collect());
         state.store_selection();
@@ -113,7 +148,7 @@ pub async fn accept_handoff(state: &AppState, handoff: &Handoff) -> Result<(), S
     let window = web_sys::window().unwrap();
     let storage = window.local_storage().unwrap().unwrap();
     storage
-        .set_item(USER_ID_KEY, &handoff.user_id)
+        .set_item(USER_ID_KEY, user_id)
         .map_err(|_| "storage".to_string())?;
     let _ = window.location().reload();
     Ok(())

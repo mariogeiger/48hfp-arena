@@ -166,7 +166,7 @@ pub async fn boot(state: &AppState) {
         state.navigate(Page::Swipe);
     }
 
-    crate::identity::load_name(state).await;
+    crate::identity::load_identity(state).await;
     if let Some(other) = handoff {
         crate::identity::offer_handoff(state, &other).await;
     }

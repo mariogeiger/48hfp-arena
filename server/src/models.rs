@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use crate::bt::BtRating;
+use crate::google::GoogleAccount;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UserState {
@@ -13,6 +14,9 @@ pub struct UserState {
     /// private, shown only to whoever holds the identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// The Google account that signs in as this identity, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub google: Option<GoogleAccount>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

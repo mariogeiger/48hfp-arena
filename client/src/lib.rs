@@ -1,5 +1,6 @@
 mod api;
 mod components;
+mod google;
 mod i18n;
 mod identity;
 mod pages;
