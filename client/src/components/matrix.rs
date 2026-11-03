@@ -1,3 +1,8 @@
+//! A vote matrix drawn on a canvas: one row and one column per item, each
+//! cell how the row fared against the column, with a tooltip on hover and a
+//! scrollbar on top when it is wider than the page.
+
+use crate::i18n::t;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
@@ -157,7 +162,7 @@ pub fn render_matrix_canvas(container_id: &str, config: MatrixConfig) {
     ctx.set_font(FONT);
     ctx.set_text_align("center");
     ctx.set_text_baseline("middle");
-    let _ = ctx.fill_text("\u{2193} beat \u{2192}", HEADER / 2.0, HEADER / 2.0);
+    let _ = ctx.fill_text(t().matrix_corner, HEADER / 2.0, HEADER / 2.0);
 
     // Column headers (rotated)
     ctx.save();

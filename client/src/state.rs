@@ -1,3 +1,7 @@
+//! What the app knows and shows: the site's configuration, the page, the
+//! sheet or panel open over it, the viewer's identity and selection, and the
+//! data each page draws, as signals the components read.
+
 use crate::i18n::Lang;
 use leptos::prelude::*;
 use std::collections::HashSet;
@@ -130,33 +134,46 @@ impl SiteConfig {
     }
 }
 
+/// The pages, one per tab, and the page explaining the ranking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
-    Select,
-    Swipe,
+    Duels,
     Board,
-    More,
+    Me,
+    About,
 }
 
 impl Page {
+    /// The page an address names; older addresses still lead somewhere.
     pub fn from_str(s: &str) -> Option<Page> {
         match s {
-            "select" => Some(Page::Select),
-            "swipe" => Some(Page::Swipe),
-            "board" => Some(Page::Board),
-            "more" | "stats" => Some(Page::More),
+            "duels" | "swipe" | "select" => Some(Page::Duels),
+            "board" | "stats" => Some(Page::Board),
+            "me" | "more" => Some(Page::Me),
+            "about" => Some(Page::About),
             _ => None,
         }
     }
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            Page::Select => "select",
-            Page::Swipe => "swipe",
+            Page::Duels => "duels",
             Page::Board => "board",
-            Page::More => "more",
+            Page::Me => "me",
+            Page::About => "about",
         }
     }
+}
+
+/// What may slide over the page besides an item's sheet or a duel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Panel {
+    /// Signing in, the link to another device, signing out.
+    Account,
+    /// The items the viewer knows.
+    Selection,
+    /// The item every duel features, or none.
+    Focus,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -171,7 +188,7 @@ pub struct VoteRecord {
     pub loser_id: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairDoneReason {
     NotEnough,
     FocusDone,
@@ -191,7 +208,6 @@ pub struct LeaderboardEntry {
 pub struct Stats {
     pub total_votes: u64,
     pub active_users: u64,
-    pub total_films: u64,
     pub films_with_votes: u64,
 }
 
@@ -200,7 +216,6 @@ pub struct Contribution {
     pub rank: u64,
     pub is_you: bool,
     pub votes: u64,
-    pub films_voted: u64,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -239,6 +254,17 @@ pub struct GlobalMatrixData {
     pub wins: Vec<MatrixWin>,
 }
 
+/// The Google account this identity signs in with, as the viewer sees it.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct GoogleProfile {
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub picture: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Toast {
     pub id: f64,
@@ -250,11 +276,12 @@ pub struct AppState {
     pub page: RwSignal<Page>,
     pub films: RwSignal<Vec<Film>>,
     pub selected_ids: RwSignal<HashSet<usize>>,
-    pub search_query: RwSignal<String>,
 
     pub pair: RwSignal<Option<FilmPair>>,
     pub pair_status: RwSignal<Option<PairDoneReason>>,
     pub vote_count: RwSignal<usize>,
+    /// The duels left among the viewer's items, as of the last pair drawn.
+    pub pairs_left: RwSignal<Option<usize>>,
     pub vote_history: RwSignal<Vec<VoteRecord>>,
     pub focus_film_id: RwSignal<Option<usize>>,
 
@@ -263,6 +290,8 @@ pub struct AppState {
     pub contributions: RwSignal<Vec<Contribution>>,
     pub user_matrix: RwSignal<Option<UserMatrixData>>,
     pub global_matrix: RwSignal<Option<GlobalMatrixData>>,
+    /// Counts the votes others cast, so the ranking's tab can pulse.
+    pub live_pulse: RwSignal<u32>,
 
     pub toasts: RwSignal<Vec<Toast>>,
     pub banned: RwSignal<bool>,
@@ -271,14 +300,17 @@ pub struct AppState {
     pub proposals: RwSignal<Vec<Proposal>>,
     /// The item sheet open over the page, if any.
     pub sheet: RwSignal<Option<Sheet>>,
-    /// The duel open over the matrices, if any: the row item, then the column one.
+    /// The duel open over the page, if any: the left item, then the right one.
     pub duel: RwSignal<Option<(usize, usize)>>,
+    /// The panel open over the page, if any.
+    pub panel: RwSignal<Option<Panel>>,
 
     /// The private name of this identity, once known.
     pub user_name: RwSignal<Option<String>>,
-    /// The e-mail of the Google account that signs in as this identity, if any.
-    pub google_email: RwSignal<Option<String>>,
-    /// Another identity a link offers to continue, awaiting the viewer's answer.
+    /// The Google account that signs in as this identity, if any.
+    pub google: RwSignal<Option<GoogleProfile>>,
+    /// Another identity a `#continue/<uuid>` link offers, awaiting the
+    /// viewer's answer.
     pub handoff: RwSignal<Option<Handoff>>,
 
     pub user_id: String,
@@ -324,14 +356,14 @@ impl AppState {
         };
 
         Self {
-            page: RwSignal::new(Page::Swipe),
+            page: RwSignal::new(Page::Duels),
             films: RwSignal::new(Vec::new()),
             selected_ids: RwSignal::new(selected_ids),
-            search_query: RwSignal::new(String::new()),
 
             pair: RwSignal::new(None),
             pair_status: RwSignal::new(None),
             vote_count: RwSignal::new(0),
+            pairs_left: RwSignal::new(None),
             vote_history: RwSignal::new(Vec::new()),
             focus_film_id: RwSignal::new(None),
 
@@ -340,6 +372,7 @@ impl AppState {
             contributions: RwSignal::new(Vec::new()),
             user_matrix: RwSignal::new(None),
             global_matrix: RwSignal::new(None),
+            live_pulse: RwSignal::new(0),
 
             toasts: RwSignal::new(Vec::new()),
             banned: RwSignal::new(false),
@@ -347,9 +380,10 @@ impl AppState {
             proposals: RwSignal::new(Vec::new()),
             sheet: RwSignal::new(None),
             duel: RwSignal::new(None),
+            panel: RwSignal::new(None),
 
             user_name: RwSignal::new(None),
-            google_email: RwSignal::new(None),
+            google: RwSignal::new(None),
             handoff: RwSignal::new(None),
 
             user_id,
@@ -371,11 +405,8 @@ impl AppState {
         .forget();
     }
 
-    /// Open the sheet of an item over the leaderboard; its link is `#film/<id>`.
+    /// Open the sheet of an item; its link is `#film/<id>`.
     pub fn open_sheet(&self, sheet: Sheet) {
-        if self.page.get_untracked() != Page::Board {
-            self.navigate(Page::Board);
-        }
         if let Sheet::Item(id) = sheet {
             let _ = web_sys::window()
                 .unwrap()
@@ -386,7 +417,8 @@ impl AppState {
     }
 
     /// Show what the address names, when the browser changes it (the back
-    /// button, a link): an item's sheet for `#film/<id>`, else a page.
+    /// button, a link): an item's sheet for `#film/<id>`, the offer of
+    /// another identity for `#continue/<uuid>`, else a page.
     pub fn follow_hash(&self) {
         let hash = web_sys::window()
             .unwrap()
@@ -408,6 +440,9 @@ impl AppState {
             self.sheet.set(None);
             if self.page.get_untracked() != page {
                 self.navigate(page);
+            }
+            if hash == "select" {
+                self.panel.set(Some(Panel::Selection));
             }
         }
     }
@@ -459,37 +494,44 @@ impl AppState {
     pub fn navigate(&self, page: Page) {
         self.sheet.set(None);
         self.duel.set(None);
+        self.panel.set(None);
         self.page.set(page);
 
-        // Update body class for swipe
-        let doc = web_sys::window().unwrap().document().unwrap();
-        let body = doc.body().unwrap();
-        if page == Page::Swipe {
-            body.class_list().add_1("swipe-active").unwrap();
-        } else {
-            body.class_list().remove_1("swipe-active").unwrap();
-        }
+        // The duels fill the screen and do not scroll.
+        let body = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .body()
+            .unwrap();
+        let _ = body
+            .class_list()
+            .toggle_with_force("duels-active", page == Page::Duels);
 
-        // Update hash
         let window = web_sys::window().unwrap();
         let _ = window.location().set_hash(page.as_str());
+        window.scroll_to_with_x_and_y(0.0, 0.0);
 
-        // Trigger data loading for the page
         let state = self.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            match page {
-                Page::Swipe => crate::api::load_pair(&state).await,
-                Page::Board => {
-                    crate::api::load_board(&state).await;
-                    crate::wiki::load_proposals(&state).await;
-                }
-                Page::More => crate::api::load_more(&state).await,
-                Page::Select => {}
+        wasm_bindgen_futures::spawn_local(async move { state.load_page(page).await });
+    }
+
+    /// Fetch what `page` shows.
+    pub async fn load_page(&self, page: Page) {
+        match page {
+            Page::Duels => crate::api::load_pair(self).await,
+            Page::Board => {
+                crate::api::load_board(self).await;
+                crate::wiki::load_proposals(self).await;
+                crate::api::load_backstage(self).await;
             }
-        });
+            Page::Me => crate::api::load_mine(self).await,
+            Page::About => {}
+        }
     }
 }
 
+/// The key under which the browser keeps its identity.
 pub const USER_ID_KEY: &str = "filmrank_uid";
 const SELECTED_KEY: &str = "filmrank_selected";
 const EXCLUDED_KEY: &str = "filmrank_excluded";

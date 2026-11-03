@@ -5,7 +5,7 @@
 
 use crate::api::{get, post};
 use crate::i18n::t;
-use crate::state::{AppState, Handoff, SiteConfig, USER_ID_KEY};
+use crate::state::{AppState, GoogleProfile, Handoff, SiteConfig, USER_ID_KEY};
 use leptos::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
@@ -14,7 +14,7 @@ struct Identity {
     name: Option<String>,
     votes: usize,
     #[serde(default)]
-    google: Option<String>,
+    google: Option<GoogleProfile>,
 }
 
 async fn identity(user_id: &str) -> Option<Identity> {
@@ -25,7 +25,7 @@ pub async fn load_identity(state: &AppState) {
     let identity = identity(&state.user_id).await;
     let (name, google) = identity.map_or((None, None), |i| (i.name, i.google));
     state.user_name.set(name);
-    state.google_email.set(google);
+    state.google.set(google);
 }
 
 pub async fn save_name(state: &AppState, name: &str) -> Result<(), String> {

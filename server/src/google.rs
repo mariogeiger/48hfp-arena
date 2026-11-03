@@ -13,12 +13,18 @@ pub struct Google {
     pub keys_path: String,
 }
 
-/// The Google account an identity is tied to: `sub` names it for good, the
-/// e-mail only shows the viewer which account it is.
+/// The Google account an identity is tied to: `sub` names it for good; the
+/// e-mail, name and picture only show the viewer which account it is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoogleAccount {
     pub sub: String,
     pub email: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub given_name: String,
+    #[serde(default)]
+    pub picture: String,
 }
 
 #[derive(Deserialize)]
@@ -28,6 +34,12 @@ struct Claims {
     email: String,
     #[serde(default)]
     email_verified: bool,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    given_name: String,
+    #[serde(default)]
+    picture: String,
 }
 
 impl Google {
@@ -62,6 +74,9 @@ fn verify(token: &str, keys: &JwkSet, client_id: &str) -> Result<GoogleAccount, 
         } else {
             String::new()
         },
+        name: claims.name,
+        given_name: claims.given_name,
+        picture: claims.picture,
     })
 }
 
@@ -87,6 +102,7 @@ mod tests {
             .as_secs() as i64;
         let claims = serde_json::json!({
             "sub": "1001", "email": "tom@example.com", "email_verified": true,
+            "name": "Tom Pouce", "given_name": "Tom", "picture": "https://example.com/tom.png",
             "aud": aud, "iss": iss, "iat": now, "exp": now + exp_in,
         });
         let mut header = Header::new(Algorithm::RS256);
@@ -107,7 +123,10 @@ mod tests {
             account,
             Ok(GoogleAccount {
                 sub: "1001".into(),
-                email: "tom@example.com".into()
+                email: "tom@example.com".into(),
+                name: "Tom Pouce".into(),
+                given_name: "Tom".into(),
+                picture: "https://example.com/tom.png".into(),
             })
         );
     }

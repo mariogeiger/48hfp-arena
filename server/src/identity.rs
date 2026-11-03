@@ -20,7 +20,11 @@ pub async fn identity(data: web::Data<AppState>, query: web::Query<UserQuery>) -
         Some(user) => HttpResponse::Ok().json(serde_json::json!({
             "name": user.name,
             "votes": user.compared_pairs.len(),
-            "google": user.google.as_ref().map(|g| &g.email),
+            "google": user.google.as_ref().map(|g| serde_json::json!({
+                "email": g.email,
+                "name": g.name,
+                "picture": g.picture,
+            })),
         })),
         None => HttpResponse::NotFound().json(serde_json::json!({"error": "unknown_user"})),
     }
@@ -112,7 +116,15 @@ pub async fn sign_in_with_google(
             None => uuid::Uuid::new_v4().to_string(),
         };
         let user = users.entry(user_id.clone()).or_default();
-        // The e-mail may have changed since.
+        // A link to this identity asks "are you <name>?": Google names it.
+        if user.name.is_none() {
+            let name = [&account.given_name, &account.name]
+                .into_iter()
+                .find(|n| !n.trim().is_empty())
+                .map(|n| n.trim().chars().take(MAX_NAME_CHARS).collect());
+            user.name = name;
+        }
+        // The e-mail, name and picture may have changed since.
         user.google = Some(account);
         let selection = user.seen_films.clone();
         let banned = data.banned.lock().unwrap();

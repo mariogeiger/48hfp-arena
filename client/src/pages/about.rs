@@ -1,12 +1,15 @@
 //! "How it works": the ranking's mathematics, in the site's language, with a
-//! live simulation of the Bradley–Terry model.
+//! live simulation of the Bradley–Terry model. Mounted only while in view,
+//! so that the simulation runs only then.
 
+use crate::components::icons::{Icon, icon};
 use crate::i18n::{Lang, fill, lang, say, t};
-use crate::state::SiteConfig;
+use crate::state::{AppState, Page, SiteConfig};
 use leptos::prelude::*;
 
 #[component]
-pub fn HowItWorks() -> impl IntoView {
+pub fn AboutPage() -> impl IntoView {
+    let state = use_context::<AppState>().unwrap();
     let cfg = SiteConfig::get();
     let eligibility = match lang() {
         Lang::En => {
@@ -20,9 +23,14 @@ pub fn HowItWorks() -> impl IntoView {
         eligibility,
         &[("votes", &cfg.min_votes), ("voters", &cfg.min_voters)],
     );
+    let source_url = cfg.source_url.clone();
     view! {
-        <div class="about-section">
-            <h3>{t().how_it_works}</h3>
+        <div class="about">
+            <button class="back-btn" on:click=move |_| state.navigate(Page::Board)>
+                {icon(Icon::ArrowLeft)}
+                <span>{t().tab_board}</span>
+            </button>
+            <h1>{t().how_it_works}</h1>
             <div class="about-content">
                 {match lang() {
                     Lang::En => english().into_any(),
@@ -31,6 +39,12 @@ pub fn HowItWorks() -> impl IntoView {
                 <h4>{match lang() { Lang::En => "Leaderboard Eligibility", Lang::Fr => "Entr\u{00E9}e dans le classement" }}</h4>
                 <p>{eligibility}</p>
             </div>
+            {(!source_url.is_empty()).then(|| view! {
+                <a class="link-btn" href=source_url target="_blank" rel="noopener">
+                    {icon(Icon::GitHub)}
+                    <span>{t().source_code}</span>
+                </a>
+            })}
         </div>
     }
 }
@@ -364,8 +378,8 @@ fn BtSimulation() -> impl IntoView {
     let step: RwSignal<u32> = RwSignal::new(0);
     // Last vote highlight (winner, loser)
     let last_vote: RwSignal<Option<(usize, usize)>> = RwSignal::new(None);
-    // Timer handle
-    let timer_handle: RwSignal<Option<i32>> = RwSignal::new(None);
+    // The interval adding votes, if running; cleared when the page leaves.
+    let timer_handle = std::sync::Arc::new(std::sync::atomic::AtomicI32::new(-1));
     let playing = RwSignal::new(true);
 
     // Run MM algorithm on current wins, return new betas
@@ -467,46 +481,62 @@ fn BtSimulation() -> impl IntoView {
         last_vote.set(Some((winner, loser)));
     };
 
-    let start_timer = move || {
-        let cb = wasm_bindgen::closure::Closure::<dyn Fn()>::new(move || {
-            add_vote();
-        });
-        let window = web_sys::window().unwrap();
-        let id = window
-            .set_interval_with_callback_and_timeout_and_arguments_0(
-                cb.as_ref().unchecked_ref(),
-                600,
-            )
-            .unwrap();
-        cb.forget();
-        timer_handle.set(Some(id));
-    };
-
-    let stop_timer = move || {
-        if let Some(id) = timer_handle.get_untracked() {
-            web_sys::window().unwrap().clear_interval_with_handle(id);
-            timer_handle.set(None);
+    let start_timer = {
+        let timer_handle = timer_handle.clone();
+        move || {
+            let cb = wasm_bindgen::closure::Closure::<dyn Fn()>::new(move || {
+                add_vote();
+            });
+            let window = web_sys::window().unwrap();
+            let id = window
+                .set_interval_with_callback_and_timeout_and_arguments_0(
+                    cb.as_ref().unchecked_ref(),
+                    600,
+                )
+                .unwrap();
+            cb.forget();
+            timer_handle.store(id, std::sync::atomic::Ordering::Relaxed);
         }
     };
 
-    let reset = move |_| {
-        stop_timer();
-        wins.set([[0; N]; N]);
-        betas.set([1.0; N]);
-        step.set(0);
-        last_vote.set(None);
-        if playing.get_untracked() {
-            start_timer();
+    let stop_timer = {
+        let timer_handle = timer_handle.clone();
+        move || {
+            let id = timer_handle.swap(-1, std::sync::atomic::Ordering::Relaxed);
+            if id >= 0 {
+                web_sys::window().unwrap().clear_interval_with_handle(id);
+            }
         }
     };
+    on_cleanup({
+        let stop_timer = stop_timer.clone();
+        move || stop_timer()
+    });
 
-    let toggle_play = move |_| {
-        if playing.get_untracked() {
+    let reset = {
+        let (stop_timer, start_timer) = (stop_timer.clone(), start_timer.clone());
+        move |_| {
             stop_timer();
-            playing.set(false);
-        } else {
-            playing.set(true);
-            start_timer();
+            wins.set([[0; N]; N]);
+            betas.set([1.0; N]);
+            step.set(0);
+            last_vote.set(None);
+            if playing.get_untracked() {
+                start_timer();
+            }
+        }
+    };
+
+    let toggle_play = {
+        let start_timer = start_timer.clone();
+        move |_| {
+            if playing.get_untracked() {
+                stop_timer();
+                playing.set(false);
+            } else {
+                playing.set(true);
+                start_timer();
+            }
         }
     };
 
@@ -552,20 +582,20 @@ fn BtSimulation() -> impl IntoView {
         ctx.set_text_align("center");
 
         // Column headers
-        for j in 0..N {
+        for (j, label) in LABELS.iter().enumerate() {
             let x = mat_x + hdr + j as f64 * cell + cell / 2.0;
-            ctx.fill_text(LABELS[j], x, mat_y - 4.0).ok();
+            ctx.fill_text(label, x, mat_y - 4.0).ok();
         }
         // Row headers
         ctx.set_text_align("right");
-        for i in 0..N {
+        for (i, label) in LABELS.iter().enumerate() {
             let y = mat_y + i as f64 * cell + cell / 2.0 + 4.0;
-            ctx.fill_text(LABELS[i], mat_x + hdr - 4.0, y).ok();
+            ctx.fill_text(label, mat_x + hdr - 4.0, y).ok();
         }
 
         // Cells
-        for i in 0..N {
-            for j in 0..N {
+        for (i, row) in w.iter().enumerate() {
+            for (j, &count) in row.iter().enumerate() {
                 let x = mat_x + hdr + j as f64 * cell;
                 let y = mat_y + i as f64 * cell;
 
@@ -575,7 +605,7 @@ fn BtSimulation() -> impl IntoView {
                     ctx.fill_rect(x, y, cell, cell);
                 } else {
                     // Highlight last vote cell
-                    let is_last = lv.map_or(false, |(wi, lo)| wi == i && lo == j);
+                    let is_last = lv.is_some_and(|(wi, lo)| wi == i && lo == j);
                     if is_last {
                         ctx.set_fill_style_str("#f5b43666");
                     } else {
@@ -584,7 +614,6 @@ fn BtSimulation() -> impl IntoView {
                     ctx.fill_rect(x, y, cell, cell);
 
                     // Win count
-                    let count = w[i][j];
                     if count > 0 {
                         ctx.set_font("bold 11px system-ui, sans-serif");
                         ctx.set_text_align("center");

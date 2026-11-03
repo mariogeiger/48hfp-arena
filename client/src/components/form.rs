@@ -43,6 +43,7 @@ pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl In
     let names = cfg.fields.clone();
     let initial = film.as_ref().map(Film::fields).unwrap_or_default();
     let id = film.map(|f| f.id);
+    let preview_id = id.unwrap_or(0);
 
     let title = RwSignal::new(initial.title);
     let team = RwSignal::new(initial.team);
@@ -136,7 +137,7 @@ pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl In
                 <div class="form-field">
                     <span>{label}</span>
                     <div class="form-poster">
-                        {move || view! { <div class="form-poster-preview"><Poster url=poster.get() /></div> }}
+                        {move || view! { <div class="form-poster-preview"><Poster url=poster.get() title=title.get() id=preview_id /></div> }}
                         <div class="form-poster-inputs">
                             <label class="upload-button">
                                 {move || if uploading.get() { t().form_uploading } else { t().form_poster_upload }}

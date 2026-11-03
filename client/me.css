@@ -1,0 +1,526 @@
+/* The viewer's own: their page, their matrix and the duel its cells open,
+   their account, and the lists of items they pick from. */
+
+.me {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 18px 14px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.me-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 22px 22px 18px;
+  border-radius: 28px;
+  background: linear-gradient(140deg, var(--purple), #a83fbf 60%, #d9529f);
+  color: #fff;
+  box-shadow: 0 16px 44px rgb(116 42 133 / 35%);
+  animation: pop-in 0.5s var(--spring);
+}
+.me-hero::before,
+.me-hero::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 10%);
+}
+.me-hero::before {
+  width: 220px;
+  height: 220px;
+  right: -60px;
+  top: -90px;
+}
+.me-hero::after {
+  width: 120px;
+  height: 120px;
+  right: 70px;
+  bottom: -70px;
+}
+.me-count {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.me-count b {
+  font-size: 60px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.me-count span {
+  font-size: 19px;
+  font-weight: 750;
+  opacity: 0.85;
+}
+.me-rank {
+  position: relative;
+  margin-top: 8px;
+  font-weight: 750;
+}
+.me-hero .tally-bar {
+  position: relative;
+  margin-top: 16px;
+  height: 8px;
+  background: rgb(255 255 255 / 22%);
+}
+.me-hero .tally-bar i {
+  background: linear-gradient(90deg, #ffe08a, var(--gold));
+}
+.me-pairs {
+  position: relative;
+  margin-top: 7px;
+  font-size: 13px;
+  font-weight: 650;
+  opacity: 0.85;
+}
+.nudge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1.5px solid var(--accent-border);
+  background: var(--card);
+  text-align: left;
+  box-shadow: var(--shadow-s);
+}
+.nudge-icon {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-bg);
+  color: #94650a;
+}
+.nudge-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nudge-text b {
+  font-weight: 850;
+  color: var(--text-strong);
+}
+.nudge-text span {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.nudge-go {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--purple);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.row-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: var(--shadow-s);
+  font-weight: 850;
+  color: var(--text-strong);
+}
+.row-btn .icon {
+  color: var(--purple);
+}
+.row-btn b {
+  margin-left: auto;
+  padding: 2px 11px;
+  border-radius: 999px;
+  background: var(--card-alt);
+  color: var(--purple);
+}
+.me-matrix {
+  padding: 18px 16px 16px;
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: var(--shadow-s);
+}
+.me-matrix .fine-print {
+  margin: 4px 0 12px;
+}
+.danger-link {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 750;
+  opacity: 0.8;
+}
+@media (hover: hover) {
+  .danger-link:hover {
+    background: #fdecec;
+    opacity: 1;
+  }
+}
+
+/* MATRICES */
+.matrix-top-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.matrix-scroll-wrapper {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 14px;
+  background: var(--bg);
+}
+.matrix-canvas {
+  display: block;
+}
+#matrix-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 70vw;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--text-strong);
+  color: #fff;
+  font-size: 12px;
+  white-space: pre-wrap;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+}
+.matrix-empty {
+  padding: 22px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* THE DUEL A CELL OPENS */
+.duel-sheet .arena {
+  margin: 8px 0 4px;
+}
+.duel-sheet .duel-card {
+  animation: none;
+}
+.duel-sheet .duel-card:disabled {
+  cursor: progress;
+}
+.duel-card.picked {
+  box-shadow:
+    0 0 0 3px var(--win),
+    var(--shadow);
+}
+.duel-badge {
+  min-height: 18px;
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 850;
+  color: var(--win);
+}
+.duel-sheet > .ghost-btn {
+  display: flex;
+  margin: 14px auto 0;
+}
+.duel-tally {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.split-label {
+  display: block;
+  margin-bottom: 4px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--text-muted);
+}
+.split-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.split-row b {
+  min-width: 46px;
+  font-size: 14px;
+  font-weight: 850;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.split-row b:first-child {
+  text-align: right;
+}
+.split-bar {
+  flex: 1;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--gold);
+}
+.split-bar.empty {
+  background: var(--card-alt);
+}
+.split-bar i {
+  display: block;
+  height: 100%;
+  background: var(--purple);
+  box-shadow: 2px 0 0 var(--card);
+  transition: width 0.5s var(--ease-out);
+}
+
+/* THE ACCOUNT */
+.account-head {
+  padding: 2px 0 14px;
+  text-align: center;
+}
+.account-head .avatar {
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 10px;
+  font-size: 32px;
+}
+.account-head h2 {
+  padding: 0;
+}
+.account-head p {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.google-button {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+  margin: 4px 0;
+}
+.or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.or::before,
+.or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.handoff {
+  padding: 0 14px;
+  border-radius: 20px;
+  background: var(--card-alt);
+}
+.handoff summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  list-style: none;
+  font-weight: 800;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+.handoff summary::-webkit-details-marker {
+  display: none;
+}
+.handoff summary .icon {
+  color: var(--purple);
+}
+.handoff summary .icon:last-child {
+  margin-left: auto;
+  color: var(--text-muted);
+  transition: transform 0.25s var(--ease-out);
+}
+.handoff[open] summary .icon:last-child {
+  transform: rotate(180deg);
+}
+.session {
+  padding-bottom: 16px;
+}
+.session .sheet-hint {
+  margin-top: 0;
+}
+.session-name {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.session-name input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 15px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  color: var(--text-strong);
+  font-size: 15px;
+  outline: none;
+}
+.session-name input:focus {
+  border-color: var(--purple);
+}
+.session-name .mini-btn {
+  background: var(--purple);
+  color: #fff;
+}
+.session-qr svg {
+  display: block;
+  width: 172px;
+  height: 172px;
+  margin: 4px auto 14px;
+  padding: 6px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--shadow-s);
+}
+.session .cta {
+  width: 100%;
+}
+.session .fine-print {
+  margin-top: 10px;
+  text-align: center;
+}
+.account-sheet > .ghost-btn {
+  display: flex;
+  margin: 16px auto 0;
+}
+
+/* LISTS TO PICK FROM */
+.list-sheet {
+  max-width: 620px;
+}
+.list-tools {
+  position: sticky;
+  top: -28px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -2px 8px;
+  padding: 8px 2px;
+  background: var(--card);
+}
+.search {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--card-alt);
+  color: var(--text-muted);
+}
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text-strong);
+  font-size: 15px;
+  outline: none;
+}
+.pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  text-align: left;
+  transition: background 0.15s;
+}
+@media (hover: hover) {
+  .pick-row:hover {
+    background: var(--card-alt);
+  }
+}
+.pick-row.on {
+  background: var(--card-selected);
+}
+.pick-check {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 2px solid var(--border);
+  color: transparent;
+  transition:
+    transform 0.2s var(--spring),
+    background 0.15s,
+    border-color 0.15s;
+}
+.pick-row.on .pick-check {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--text-strong);
+  transform: scale(1.08);
+}
+.pick-check .icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 3;
+}
+.pick-thumb {
+  width: 38px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.pick-icon {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--accent-bg);
+  color: var(--purple);
+}
+.pick-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pick-title {
+  font-weight: 800;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pick-meta {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (min-width: 720px) {
+  .list-sheet .pick-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

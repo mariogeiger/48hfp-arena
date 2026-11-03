@@ -2815,7 +2815,6 @@ dependencies = [
  "js-sys",
  "leptos",
  "qrcode",
- "send_wrapper",
  "serde",
  "serde_json",
  "versus-shared",

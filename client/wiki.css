@@ -1,167 +1,4 @@
-/* The wiki: item sheets, the edit form, history and proposals. */
-
-/* Items open their sheet when tapped */
-.board-item[data-film-id],
-.board-proposal {
-  cursor: pointer;
-}
-.board-item[data-film-id]:hover,
-.board-proposal:hover {
-  background: var(--card-selected);
-}
-
-/* PROPOSALS (below the leaderboard) */
-.proposals {
-  padding: 8px 16px 24px;
-}
-.proposals h3 {
-  font-size: 15px;
-  color: var(--text-strong);
-  margin-top: 16px;
-}
-.proposals-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 4px 0 4px;
-}
-.add-item {
-  width: 100%;
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px dashed var(--purple);
-  background: none;
-  color: var(--purple);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.add-item:hover {
-  background: var(--card-selected);
-}
-.board-proposal .poster,
-.board-proposal .poster-ph {
-  --pw: 36px;
-  --ph: 50px;
-  --pf: 14px;
-  border-radius: 4px;
-}
-.badge {
-  flex-shrink: 0;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-/* SHEET: a bottom sheet on phones, a centered panel on wider screens */
-.sheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-.sheet {
-  position: relative;
-  width: 100%;
-  max-width: 560px;
-  max-height: 92dvh;
-  overflow-y: auto;
-  background: var(--card);
-  border-radius: 16px 16px 0 0;
-  padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
-  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.2);
-}
-@media (min-width: 600px) {
-  .sheet-backdrop {
-    align-items: center;
-    padding: 24px;
-  }
-  .sheet {
-    border-radius: 16px;
-    padding: 24px;
-  }
-}
-.sheet h2 {
-  font-size: 20px;
-  color: var(--text-strong);
-  padding-right: 36px;
-  overflow-wrap: anywhere;
-}
-.sheet-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
-  background: var(--card-alt);
-  color: var(--text);
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-}
-.sheet-back {
-  border: none;
-  background: none;
-  color: var(--purple);
-  font-size: 14px;
-  font-weight: 600;
-  padding: 0 0 8px;
-  cursor: pointer;
-}
-.sheet-hint,
-.sheet-notice {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin: 6px 0 12px;
-}
-.sheet-notice {
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--accent-bg);
-  color: var(--text);
-}
-.sheet-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
-}
-.sheet-actions button {
-  flex: 1;
-  min-width: 120px;
-  padding: 11px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.sheet-actions button:hover {
-  background: var(--card-alt);
-}
-.sheet-actions button.primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--text-strong);
-}
-.sheet-actions button.danger {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-.sheet-actions button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
+/* The wiki: an item's sheet, the edit form and the history. */
 
 /* ITEM VIEW */
 .item-view {
@@ -169,12 +6,30 @@
   gap: 16px;
   align-items: flex-start;
 }
-.item-poster .poster,
-.item-poster .poster-ph {
-  --pw: 120px;
-  --ph: 170px;
-  --pf: 36px;
-  border-radius: 8px;
+.item-poster {
+  width: 124px;
+  flex-shrink: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.item-standing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.item-standing span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--card-alt);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.item-standing .standing-rank {
+  background: var(--purple);
+  color: #fff;
 }
 .item-text {
   flex: 1;
@@ -202,9 +57,11 @@
   box-shadow: 0 2px 8px var(--accent-border);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.edit-pill:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--accent-border);
+@media (hover: hover) {
+  .edit-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--accent-border);
+  }
 }
 .edit-pill:active {
   transform: translateY(0);
@@ -221,9 +78,11 @@
   font-size: 12px;
   cursor: pointer;
 }
-.history-link:hover {
-  color: var(--purple);
-  text-decoration: underline;
+@media (hover: hover) {
+  .history-link:hover {
+    color: var(--purple);
+    text-decoration: underline;
+  }
 }
 .item-synopsis {
   margin-top: 14px;
@@ -262,8 +121,10 @@
   font-weight: 600;
   text-decoration: none;
 }
-.video-link:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .video-link:hover {
+    text-decoration: underline;
+  }
 }
 
 /* FORM */
@@ -325,8 +186,10 @@
   font-weight: 600;
   cursor: pointer;
 }
-.upload-button:hover {
-  background: var(--card-selected);
+@media (hover: hover) {
+  .upload-button:hover {
+    background: var(--card-selected);
+  }
 }
 .upload-button input {
   display: none;
@@ -393,8 +256,10 @@
   font-weight: 600;
   cursor: pointer;
 }
-.history-restore:hover {
-  background: var(--card-alt);
+@media (hover: hover) {
+  .history-restore:hover {
+    background: var(--card-alt);
+  }
 }
 
 .form-field textarea {

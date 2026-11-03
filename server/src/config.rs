@@ -98,9 +98,9 @@ pub struct SiteConfig {
     /// full set. Defaults to true (the 48hfp "films I've seen" behaviour).
     #[serde(default = "default_true")]
     pub require_selection: bool,
-    /// The page a visit opens on when its address names none: `select`,
-    /// `swipe`, `board` or `more`. Empty keeps the default (select until the
-    /// viewer has selected enough, then swipe).
+    /// The page a visit opens on when its address names none: `duels`,
+    /// `board` or `me`; the older `select`, `swipe`, `stats` and `more` still
+    /// lead to the page that took their place. Empty opens the duels.
     #[serde(default)]
     pub start_page: String,
     /// Whether every item starts selected, the viewer taking out those they

@@ -1,3 +1,6 @@
+//! The app: it fetches the site's configuration, speaks its language, and
+//! mounts the header, the tabs, the pages and what opens over them.
+
 mod api;
 mod components;
 mod google;
@@ -72,11 +75,8 @@ fn App() -> impl IntoView {
                 let s2 = s.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     let page = s2.page.get_untracked();
-                    if page == Page::Board {
-                        api::load_board(&s2).await;
-                    }
-                    if page == Page::More {
-                        api::load_more(&s2).await;
+                    if page != Page::Duels {
+                        s2.load_page(page).await;
                     }
                 });
             }
@@ -87,7 +87,7 @@ fn App() -> impl IntoView {
         closure.forget();
     });
 
-    // Rank swap detection — toast when films overtake each other
+    // On the ranking, a toast tells which items overtook which.
     {
         let state = state.clone();
         let prev_board: std::cell::RefCell<Vec<state::LeaderboardEntry>> =
@@ -126,7 +126,7 @@ fn App() -> impl IntoView {
                         swaps.push(format!("\u{2B06}\u{FE0F} {line}"));
                     }
                 }
-                if !swaps.is_empty() {
+                if !swaps.is_empty() && state.page.get_untracked() == Page::Board {
                     state.add_toast(swaps.join("<br>"));
                 }
             }
@@ -135,30 +135,76 @@ fn App() -> impl IntoView {
         });
     }
 
+    close_on_escape(&state);
+    hold_page_under_sheets(&state);
+
     let page = state.page;
-
     view! {
-        <components::nav::Nav />
-
-        <div id="page-select" class="page" class:active=move || page.get() == Page::Select>
-            <pages::select::SelectPage />
-        </div>
-        <div id="page-swipe" class="page" class:active=move || page.get() == Page::Swipe>
-            <pages::swipe::SwipePage />
-        </div>
-        <div id="page-board" class="page" class:active=move || page.get() == Page::Board>
-            <pages::board::BoardPage />
-        </div>
-        <div id="page-more" class="page" class:active=move || page.get() == Page::More>
-            <pages::more::MorePage />
-        </div>
+        <components::shell::Header />
+        <components::shell::Tabs />
+        <main class="main">
+            <div class="page page-duels" class:active=move || page.get() == Page::Duels>
+                <pages::duels::DuelsPage />
+            </div>
+            <div class="page page-board" class:active=move || page.get() == Page::Board>
+                <pages::board::BoardPage />
+            </div>
+            <div class="page page-me" class:active=move || page.get() == Page::Me>
+                <pages::me::MePage />
+            </div>
+            {move || (page.get() == Page::About).then(|| view! {
+                <div class="page page-about active">
+                    <pages::about::AboutPage />
+                </div>
+            })}
+        </main>
 
         <components::sheet::ItemSheet />
         <components::duel::DuelSheet />
+        <components::pickers::SelectionSheet />
+        <components::pickers::FocusSheet />
+        <components::account::AccountSheet />
         <components::toast::ToastContainer />
 
         <components::overlays::WelcomeOverlay />
         <components::overlays::BannedOverlay />
-        <components::identity::HandoffOverlay />
+        <components::account::HandoffOverlay />
     }
+}
+
+/// Escape closes what lies over the page, the topmost first.
+fn close_on_escape(state: &AppState) {
+    let state = state.clone();
+    let on_key = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(
+        move |ev: web_sys::KeyboardEvent| {
+            if ev.key() != "Escape" {
+                return;
+            }
+            if state.duel.get_untracked().is_some() {
+                state.duel.set(None);
+            } else if state.panel.get_untracked().is_some() {
+                state.panel.set(None);
+            } else if state.sheet.get_untracked().is_some() {
+                state.close_sheet();
+            }
+        },
+    );
+    let doc = web_sys::window().unwrap().document().unwrap();
+    doc.add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref())
+        .unwrap();
+    on_key.forget();
+}
+
+/// The page stays still under an open sheet.
+fn hold_page_under_sheets(state: &AppState) {
+    let (sheet, duel, panel) = (state.sheet, state.duel, state.panel);
+    Effect::new(move || {
+        let covered = sheet.get().is_some() || duel.get().is_some() || panel.get().is_some();
+        if let Some(body) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.body())
+        {
+            let _ = body.class_list().toggle_with_force("sheet-open", covered);
+        }
+    });
 }

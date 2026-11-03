@@ -1,10 +1,11 @@
-//! The duel a matrix cell opens, over the More page: the two items side by
+//! The duel a matrix cell opens, over its page: the two items side by
 //! side, the viewer's vote on the pair, which a tap on an item sets and a
 //! button takes back, and how everyone voted against what the model predicts.
 //! Nothing changes until the viewer taps, and closing changes nothing.
 
 use crate::api;
-use crate::components::poster::Poster;
+use crate::components::card::CardFace;
+use crate::components::frame::SheetFrame;
 use crate::i18n::{fill, t};
 use crate::state::{AppState, SiteConfig};
 use leptos::prelude::*;
@@ -99,7 +100,7 @@ pub fn DuelSheet() -> impl IntoView {
                 let cast = cast.clone();
                 view! {
                     <button
-                        class="film-card duel-card"
+                        class="duel-card"
                         class:picked=move || vote.get() == Vote::Won(id)
                         disabled=move || busy.get()
                         on:click=move |_| {
@@ -108,96 +109,79 @@ pub fn DuelSheet() -> impl IntoView {
                             }
                         }
                     >
-                        {SiteConfig::get().has_image.then(|| view! { <Poster url=film.poster_url.clone() /> })}
-                        <div class="title">{film.title.clone()}</div>
-                        <div class="meta">{meta(&film)}</div>
-                        <div class="duel-badge">
+                        <CardFace film=film />
+                        <span class="duel-badge">
                             {move || (vote.get() == Vote::Won(id)).then_some(t().duel_your_pick)}
-                        </div>
+                        </span>
                     </button>
                 }
             }
         };
 
         let state_tally = state.clone();
-        let (a_title, b_title) = (a.title.clone(), b.title.clone());
         let tally = move || {
             let (wa, wb, p) = global_tally(&state_tally, a_id, b_id);
-            let votes = if wa + wb == 0 {
-                t().duel_global_none.to_string()
-            } else {
-                fill(
-                    t().duel_global,
-                    &[("a", &a_title), ("wa", &wa), ("wb", &wb), ("b", &b_title)],
-                )
-            };
-            let model = fill(
-                t().duel_model,
-                &[("a", &a_title), ("p", &((p * 100.0).round() as i32))],
-            );
+            let votes = wa + wb;
+            let left = (p * 100.0).round() as i32;
+            let percent = |n: i32| fill(t().percent, &[("p", &n)]);
             view! {
-                <p>{votes}</p>
-                <p>{model}</p>
+                {split(t().duel_everyone, wa.to_string(), wb.to_string(), (votes > 0).then(|| wa as f64 / votes as f64))}
+                {split(t().duel_model, percent(left), percent(100 - left), Some(p))}
             }
         };
 
         let duel = state.duel;
-        let close = move || duel.set(None);
         let (card_a, card_b) = (card.clone()(a, b_id), card(b, a_id));
         Some(view! {
-            <div
-                class="sheet-backdrop"
-                on:click=move |ev| {
-                    if ev.target() == ev.current_target() {
-                        close();
-                    }
-                }
-            >
-                <div class="sheet duel-sheet" role="dialog" aria-modal="true">
-                    <button class="sheet-close" title=t().sheet_close on:click=move |_| close()>
-                        "\u{00D7}"
-                    </button>
-                    <h2>{heading}</h2>
-                    <p class="sheet-hint">
-                        {move || match vote.get() {
-                            Vote::None => t().duel_none,
-                            Vote::Legacy => t().duel_legacy,
-                            Vote::Won(_) => t().duel_hint,
-                        }}
-                    </p>
-                    <div class="swipe-arena duel-arena">
-                        {card_a}
-                        {card_b}
-                    </div>
-                    <div class="sheet-actions">
-                        {move || match vote.get() {
-                            Vote::Won(winner) => {
-                                let loser = if winner == a_id { b_id } else { a_id };
-                                let cast = cast_remove.clone();
-                                Some(view! {
-                                    <button
-                                        class="danger"
-                                        disabled=move || busy.get()
-                                        on:click=move |_| cast("/api/unvote", winner, loser)
-                                    >
-                                        {t().duel_remove}
-                                    </button>
-                                })
-                            }
-                            _ => None,
-                        }}
-                    </div>
-                    <div class="duel-tally">{tally}</div>
+            <SheetFrame on_close=Callback::new(move |_| duel.set(None)) class="duel-sheet">
+                <h2>{heading}</h2>
+                <p class="sheet-hint">
+                    {move || match vote.get() {
+                        Vote::None => t().duel_none,
+                        Vote::Legacy => t().duel_legacy,
+                        Vote::Won(_) => t().duel_hint,
+                    }}
+                </p>
+                <div class="arena">
+                    {card_a}
+                    <div class="vs" aria-hidden="true">"VS"</div>
+                    {card_b}
                 </div>
-            </div>
+                {move || match vote.get() {
+                    Vote::Won(winner) => {
+                        let loser = if winner == a_id { b_id } else { a_id };
+                        let cast = cast_remove.clone();
+                        Some(view! {
+                            <button
+                                class="ghost-btn danger"
+                                disabled=move || busy.get()
+                                on:click=move |_| cast("/api/unvote", winner, loser)
+                            >
+                                {t().duel_remove}
+                            </button>
+                        })
+                    }
+                    _ => None,
+                }}
+                <div class="duel-tally">{tally}</div>
+            </SheetFrame>
         })
     }
 }
 
-fn meta(film: &Film) -> String {
-    [film.team.as_str(), film.city.as_str()]
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join(" \u{00B7} ")
+/// A bar split between the left item's share and the right one's, `left`
+/// and `right` at its ends; grey when there is nothing to share.
+fn split(label: &'static str, left: String, right: String, share: Option<f64>) -> impl IntoView {
+    view! {
+        <div class="split">
+            <span class="split-label">{label}</span>
+            <div class="split-row">
+                <b>{left}</b>
+                <span class="split-bar" class:empty=share.is_none()>
+                    <i style:width=format!("{:.1}%", 100.0 * share.unwrap_or(0.0))></i>
+                </span>
+                <b>{right}</b>
+            </div>
+        </div>
+    }
 }

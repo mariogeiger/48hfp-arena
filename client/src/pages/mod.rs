@@ -1,6 +1,6 @@
 pub mod about;
+pub mod backstage;
 pub mod board;
+pub mod duels;
 pub mod matrices;
-pub mod more;
-pub mod select;
-pub mod swipe;
+pub mod me;

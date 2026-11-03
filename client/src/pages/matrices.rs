@@ -1,6 +1,7 @@
-//! The two vote matrices of the More page: the viewer's own votes, and
-//! everyone's wins against what the model predicts. A tap on a cell of
-//! either opens the duel of its pair, where the viewer's vote is set.
+//! The two vote matrices: the viewer's own votes, on their page, and
+//! everyone's wins against what the model predicts, behind the ranking. A
+//! tap on a cell of either opens the duel of its pair, where the viewer's
+//! vote is set.
 
 use crate::components::matrix::*;
 use crate::i18n::{fill, t};
@@ -8,7 +9,7 @@ use crate::state::AppState;
 use leptos::prelude::*;
 
 #[component]
-pub fn MatrixSections() -> impl IntoView {
+pub fn UserMatrix() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
 
     // Re-render user matrix when data or board changes
@@ -105,6 +106,19 @@ pub fn MatrixSections() -> impl IntoView {
             );
         }
     });
+
+    view! {
+        <div class="matrix-scroll-wrapper">
+            <div id="user-matrix">
+                <p class="matrix-empty">{t().matrix_yours_empty}</p>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+pub fn GlobalMatrix() -> impl IntoView {
+    let state = use_context::<AppState>().unwrap();
 
     // Re-render global matrix when data or board changes
     Effect::new({
@@ -228,22 +242,9 @@ pub fn MatrixSections() -> impl IntoView {
     });
 
     view! {
-        <div class="matrix-section">
-            <h3>{t().matrix_yours}</h3>
-            <p class="matrix-hint">{t().matrix_yours_hint}</p>
-            <div class="matrix-scroll-wrapper">
-                <div id="user-matrix">
-                    <p class="matrix-empty">{t().matrix_yours_empty}</p>
-                </div>
-            </div>
-        </div>
-        <div class="matrix-section">
-            <h3>{t().matrix_global}</h3>
-            <p class="matrix-hint">{t().matrix_global_hint}</p>
-            <div class="matrix-scroll-wrapper">
-                <div id="global-matrix">
-                    <p class="matrix-empty">{t().matrix_global_empty}</p>
-                </div>
+        <div class="matrix-scroll-wrapper">
+            <div id="global-matrix">
+                <p class="matrix-empty">{t().matrix_global_empty}</p>
             </div>
         </div>
     }

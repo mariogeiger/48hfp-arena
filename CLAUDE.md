@@ -30,6 +30,7 @@ Cargo workspace with three crates:
 - **web-sys** — low-level browser API bindings (DOM, Canvas, Fetch, EventSource, Storage, pointer/keyboard events, etc.)
 - **js-sys** — JavaScript primitive bindings
 - **console_error_panic_hook** — routes Rust panics to the browser console
+- **qrcode** — draws, as SVG, the QR code of the link that continues a session on another device
 
 ## Build & Bundling
 

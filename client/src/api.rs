@@ -1,3 +1,7 @@
+//! The calls to the server that fill the state: the boot, the next pair, the
+//! votes and their undoing, each page's data, and the live stream of
+//! everyone's votes and changes to the catalog.
+
 use crate::state::*;
 use leptos::prelude::*;
 use std::collections::HashMap;
@@ -105,12 +109,7 @@ pub async fn fetch_config() -> SiteConfig {
 }
 
 pub async fn boot(state: &AppState) {
-    let films_url = "/api/films";
-    let board_url = "/api/leaderboard";
-
-    let (films_res, board_res) = futures::join!(async { api_get(films_url).await }, async {
-        api_get(board_url).await
-    },);
+    let (films_res, board_res) = futures::join!(api_get("/api/films"), api_get("/api/leaderboard"));
 
     if let Ok(films_json) = films_res
         && let Ok(mut films) = serde_json::from_value::<Vec<versus_shared::Film>>(films_json)
@@ -130,45 +129,38 @@ pub async fn boot(state: &AppState) {
         state.restore_selection();
     }
 
-    let require_selection = SiteConfig::get().require_selection;
-
-    // Save selection if user already has items selected (only meaningful when
-    // selection is required).
-    if require_selection {
-        let selected = state.selected_ids.get_untracked();
-        if selected.len() >= 2 {
-            save_selection(state).await;
-        }
+    let cfg = SiteConfig::get();
+    // The server draws pairs from the selection it was last sent.
+    if cfg.require_selection && state.selected_ids.get_untracked().len() >= 2 {
+        save_selection(state).await;
     }
 
-    // Navigate to initial page
     let hash = web_sys::window()
         .unwrap()
         .location()
         .hash()
         .unwrap_or_default();
-    let hash = hash.trim_start_matches('#');
-    let selected_count = state.selected_ids.get_untracked().len();
-    let handoff = hash.strip_prefix("continue/").map(str::to_string);
+    let hash = hash.trim_start_matches('#').to_string();
 
     crate::wiki::load_proposals(state).await;
     if let Some(id) = hash.strip_prefix("film/").and_then(|id| id.parse().ok()) {
+        state.navigate(Page::from_str(&cfg.start_page).unwrap_or(Page::Duels));
         state.open_sheet(Sheet::Item(id));
-    } else if let Some(page) = Page::from_str(hash)
-        .or_else(|| Page::from_str(&SiteConfig::get().start_page))
-        // Without a select step, a stale #select goes to comparing.
-        .filter(|p| require_selection || *p != Page::Select)
-    {
-        state.navigate(page);
-    } else if require_selection && selected_count == 0 {
-        state.navigate(Page::Select);
     } else {
-        state.navigate(Page::Swipe);
+        let page = Page::from_str(&hash)
+            .or_else(|| Page::from_str(&cfg.start_page))
+            .unwrap_or(Page::Duels);
+        state.navigate(page);
+        // Someone who has picked nothing yet starts by picking.
+        let unpicked = cfg.require_selection && state.selected_ids.get_untracked().len() < 2;
+        if hash == "select" || (page == Page::Duels && unpicked) {
+            state.panel.set(Some(Panel::Selection));
+        }
     }
 
     crate::identity::load_identity(state).await;
-    if let Some(other) = handoff {
-        crate::identity::offer_handoff(state, &other).await;
+    if let Some(other) = hash.strip_prefix("continue/") {
+        crate::identity::offer_handoff(state, other).await;
     }
 }
 
@@ -196,22 +188,21 @@ pub async fn load_pair(state: &AppState) {
     let Ok(data) = api_get(&url).await else {
         return;
     };
+    let votes = data.get("votes").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
     if data.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
         let selected = state.selected_ids.get_untracked();
-        let fid = state.focus_film_id.get_untracked();
-        let reason = if selected.len() < 2 {
+        let reason = if SiteConfig::get().require_selection && selected.len() < 2 {
             PairDoneReason::NotEnough
-        } else if fid.is_some() {
+        } else if state.focus_film_id.get_untracked().is_some() {
             PairDoneReason::FocusDone
         } else {
             PairDoneReason::AllDone
         };
         state.pair.set(None);
         state.pair_status.set(Some(reason));
-        state
-            .vote_count
-            .set(data.get("votes").and_then(|v| v.as_u64()).unwrap_or(0) as usize);
+        state.vote_count.set(votes);
+        state.pairs_left.set(Some(0));
     } else if let (Some(a), Some(b)) = (data.get("a"), data.get("b"))
         && let (Ok(a), Ok(b)) = (
             serde_json::from_value::<versus_shared::Film>(a.clone()),
@@ -220,9 +211,9 @@ pub async fn load_pair(state: &AppState) {
     {
         state.pair.set(Some(FilmPair { a, b }));
         state.pair_status.set(None);
-        state
-            .vote_count
-            .set(data.get("votes").and_then(|v| v.as_u64()).unwrap_or(0) as usize);
+        state.vote_count.set(votes);
+        let left = data.get("remaining").and_then(|v| v.as_u64());
+        state.pairs_left.set(left.map(|n| n as usize));
     }
 }
 
@@ -271,6 +262,7 @@ pub async fn undo_vote(state: &AppState) {
         h.pop();
     });
     state.vote_count.update(|c| *c = c.saturating_sub(1));
+    state.pairs_left.update(|left| *left = left.map(|n| n + 1));
     if let (Some(a), Some(b)) = (a, b) {
         state.pair.set(Some(FilmPair { a, b }));
         state.pair_status.set(None);
@@ -310,49 +302,65 @@ pub async fn load_board(state: &AppState) {
     }
 }
 
-pub async fn load_more(state: &AppState) {
-    let stats_url = "/api/stats";
+/// What the ranking shows behind the scenes: the stats, the voters'
+/// contributions and everyone's duels.
+pub async fn load_backstage(state: &AppState) {
+    let ts = js_sys::Date::now() as u64;
     let contrib_url = format!("/api/user-contributions?user_id={}", state.user_id);
-
-    let (stats_res, contrib_res) = futures::join!(async { api_get(stats_url).await }, async {
-        api_get(&contrib_url).await
-    },);
-
-    if let Ok(data) = stats_res
+    let global_url = format!("/api/global-matrix?_={ts}");
+    let (stats, contribs, global) = futures::join!(
+        api_get("/api/stats"),
+        api_get(&contrib_url),
+        api_get(&global_url),
+    );
+    if let Ok(data) = stats
         && let Ok(stats) = serde_json::from_value::<Stats>(data)
     {
         state.stats.set(Some(stats));
     }
-    if let Ok(data) = contrib_res
+    if let Ok(data) = contribs
         && let Ok(contribs) = serde_json::from_value::<Vec<Contribution>>(data)
     {
         state.contributions.set(contribs);
     }
-
-    refresh_matrices(state).await;
-}
-
-async fn refresh_matrices(state: &AppState) {
-    let ts = js_sys::Date::now() as u64;
-    let user_matrix_url = format!("/api/user-matrix?user_id={}&_={}", state.user_id, ts);
-    let global_matrix_url = format!("/api/global-matrix?_={}", ts);
-
-    let (um_res, gm_res) = futures::join!(async { api_get(&user_matrix_url).await }, async {
-        api_get(&global_matrix_url).await
-    },);
-
-    if let Ok(data) = um_res
-        && let Ok(matrix) = serde_json::from_value::<UserMatrixData>(data)
-    {
-        state.user_matrix.set(Some(matrix));
-    }
-    if let Ok(data) = gm_res
+    if let Ok(data) = global
         && let Ok(matrix) = serde_json::from_value::<GlobalMatrixData>(data)
     {
         state.global_matrix.set(Some(matrix));
     }
 }
 
+/// What the viewer's own page shows: their duels and their place among
+/// the voters.
+pub async fn load_mine(state: &AppState) {
+    let ts = js_sys::Date::now() as u64;
+    let mine_url = format!("/api/user-matrix?user_id={}&_={ts}", state.user_id);
+    let contrib_url = format!("/api/user-contributions?user_id={}", state.user_id);
+    let global_url = format!("/api/global-matrix?_={ts}");
+    let (mine, contribs, global) = futures::join!(
+        api_get(&mine_url),
+        api_get(&contrib_url),
+        api_get(&global_url),
+    );
+    if let Ok(data) = mine
+        && let Ok(matrix) = serde_json::from_value::<UserMatrixData>(data)
+    {
+        state.user_matrix.set(Some(matrix));
+    }
+    if let Ok(data) = contribs
+        && let Ok(contribs) = serde_json::from_value::<Vec<Contribution>>(data)
+    {
+        state.contributions.set(contribs);
+    }
+    // The duel a cell opens tells how everyone voted.
+    if let Ok(data) = global
+        && let Ok(matrix) = serde_json::from_value::<GlobalMatrixData>(data)
+    {
+        state.global_matrix.set(Some(matrix));
+    }
+}
+
+/// Set or take back a vote from a duel's sheet, then show the matrices anew.
 pub async fn matrix_action(state: &AppState, endpoint: &str, w: usize, l: usize) {
     let _ = api_post(
         endpoint,
@@ -363,8 +371,7 @@ pub async fn matrix_action(state: &AppState, endpoint: &str, w: usize, l: usize)
         }),
     )
     .await;
-
-    refresh_matrices(state).await;
+    load_mine(state).await;
 }
 
 pub async fn reset_votes(state: &AppState) {
@@ -374,7 +381,8 @@ pub async fn reset_votes(state: &AppState) {
     )
     .await;
 
-    load_more(state).await;
+    state.vote_history.set(Vec::new());
+    load_mine(state).await;
     load_board(state).await;
     load_pair(state).await;
 }
@@ -399,12 +407,21 @@ pub fn init_vote_stream(state: &AppState) {
                     versus_shared::LiveChange::Film { .. } => crate::wiki::reload(&s).await,
                     _ => load_board(&s).await,
                 }
-                if s.page.get_untracked() == Page::More {
-                    load_more(&s).await;
+                match s.page.get_untracked() {
+                    Page::Board => load_backstage(&s).await,
+                    Page::Me => load_mine(&s).await,
+                    _ => {}
                 }
-                if event.user_id != s.user_id {
+                if event.user_id == s.user_id {
+                    return;
+                }
+                // Others' votes only make the ranking's tab pulse; what
+                // changes the catalog is told.
+                if let versus_shared::LiveChange::Film { .. } = event.change {
                     known.extend(titles(&s));
                     s.add_toast(live_message(&event.change, &known));
+                } else {
+                    s.live_pulse.update(|n| *n += 1);
                 }
             });
         });
@@ -442,33 +459,22 @@ fn titles(state: &AppState) -> HashMap<usize, String> {
     titles
 }
 
-/// What a change by someone else is called in the toast, as escaped HTML;
-/// `titles` names the items, including any the change removed.
+/// What a change to the catalog by someone else is called in the toast, as
+/// escaped HTML; `titles` names the items, including any the change removed.
 fn live_message(change: &versus_shared::LiveChange, titles: &HashMap<usize, String>) -> String {
     use crate::i18n::{say, t};
     use versus_shared::{FilmChange, LiveChange};
     let title = |id: usize| titles.get(&id).cloned().unwrap_or_else(|| "?".into());
-    let message = match *change {
-        LiveChange::Vote { winner, loser } => say(
-            t().live_vote,
-            &[("a", &title(winner)), ("b", &title(loser))],
-        ),
-        LiveChange::Unvote { winner, loser } => say(
-            t().live_unvote,
-            &[("a", &title(winner)), ("b", &title(loser))],
-        ),
-        LiveChange::Reset => say(t().live_reset, &[]),
-        LiveChange::Film { film, change } => {
-            let template = match change {
-                FilmChange::Edited => t().live_edited,
-                FilmChange::Proposed => t().live_proposed,
-                FilmChange::Approved => t().live_approved,
-                FilmChange::Rejected => t().live_rejected,
-            };
-            say(template, &[("title", &title(film))])
-        }
+    let LiveChange::Film { film, change } = *change else {
+        return String::new();
     };
-    html_escape(&message)
+    let template = match change {
+        FilmChange::Edited => t().live_edited,
+        FilmChange::Proposed => t().live_proposed,
+        FilmChange::Approved => t().live_approved,
+        FilmChange::Rejected => t().live_rejected,
+    };
+    html_escape(&say(template, &[("title", &title(film))]))
 }
 
 pub fn html_escape(s: &str) -> String {

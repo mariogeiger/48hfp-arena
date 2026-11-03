@@ -1,8 +1,9 @@
-//! The sheet an item opens in, over the leaderboard: the item itself, with
+//! The sheet an item opens in, over the page: the item itself, with
 //! its video, and on an editable site its edit form, its history and, for a
 //! proposed item, its review.
 
 use crate::components::form::ItemForm;
+use crate::components::frame::SheetFrame;
 use crate::components::history::ItemHistory;
 use crate::components::poster::Poster;
 use crate::components::video::Video;
@@ -54,12 +55,11 @@ pub fn ItemSheet() -> impl IntoView {
     move || {
         let sheet = state.sheet.get()?;
         let close = close.clone();
-        let close_backdrop = close.clone();
         let body = match sheet {
             Sheet::New => {
                 let state = state.clone();
                 view! {
-                    <h2>{say(t().form_new_heading, &[])}</h2>
+                    <h2>{say(t().add_item, &[])}</h2>
                     <p class="sheet-hint">{t().form_new_hint}</p>
                     <ItemForm
                         film=None
@@ -111,21 +111,9 @@ pub fn ItemSheet() -> impl IntoView {
             }
         };
         Some(view! {
-            <div
-                class="sheet-backdrop"
-                on:click=move |ev| {
-                    if ev.target() == ev.current_target() {
-                        close_backdrop();
-                    }
-                }
-            >
-                <div class="sheet" role="dialog" aria-modal="true">
-                    <button class="sheet-close" title=t().sheet_close on:click=move |_| close()>
-                        "\u{00D7}"
-                    </button>
-                    {body}
-                </div>
-            </div>
+            <SheetFrame on_close=Callback::new(move |_| close()) class="item-sheet">
+                {body}
+            </SheetFrame>
         })
     }
 }
@@ -142,6 +130,20 @@ fn ItemView(film: Film, proposal: Option<Proposal>, mode: RwSignal<Mode>) -> imp
         .join(" \u{00B7} ");
     let id = film.id;
     let error = RwSignal::new(None::<String>);
+    // Where the ranking puts it, if it does.
+    let board = state.board;
+    let standing = move || {
+        board.with(|board| {
+            let (rank, entry) = board.iter().enumerate().find(|(_, e)| e.film_id == id)?;
+            Some(view! {
+                <div class="item-standing">
+                    <span class="standing-rank">{format!("#{}", rank + 1)}</span>
+                    <span>{format!("{} pts", entry.rating.round() as i64)}</span>
+                    <span>{say(t().board_record, &[("w", &entry.wins), ("l", &entry.losses)])}</span>
+                </div>
+            })
+        })
+    };
 
     let review = move |approve: bool| {
         let state = state.clone();
@@ -177,10 +179,15 @@ fn ItemView(film: Film, proposal: Option<Proposal>, mode: RwSignal<Mode>) -> imp
 
     view! {
         <div class="item-view">
-            {cfg.has_image.then(|| view! { <div class="item-poster"><Poster url=film.poster_url.clone() /></div> })}
+            {cfg.has_image.then(|| view! {
+                <div class="item-poster">
+                    <Poster url=film.poster_url.clone() title=film.title.clone() id=film.id />
+                </div>
+            })}
             <div class="item-text">
                 <h2>{film.title.clone()}</h2>
                 <p class="item-meta">{meta}</p>
+                {standing}
                 {cfg.editable.then(|| view! {
                     <button class="edit-pill" on:click=move |_| mode.set(Mode::Edit)>
                         <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
