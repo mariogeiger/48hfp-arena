@@ -120,22 +120,34 @@ pub fn Versions(videos: Vec<Video>, link_label: String) -> impl IntoView {
     view! { {pills} {player} }
 }
 
+/// `url`'s player, which starts at once with `autoplay`, as when a tap on
+/// the item asked for it.
 #[component]
-pub fn Player(url: String, link_label: String) -> impl IntoView {
+pub fn Player(url: String, link_label: String, #[prop(optional)] autoplay: bool) -> impl IntoView {
     match embed(&url) {
-        Embed::Frame(src) => view! {
-            <div class="video-frame">
-                <iframe
-                    src=src
-                    allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
-                    allowfullscreen=true
-                    referrerpolicy="strict-origin-when-cross-origin"
-                ></iframe>
-            </div>
+        Embed::Frame(src) => {
+            let src = if autoplay { with_autoplay(&src) } else { src };
+            view! {
+                <div class="video-frame">
+                    <iframe
+                        src=src
+                        allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+                        allowfullscreen=true
+                        referrerpolicy="strict-origin-when-cross-origin"
+                    ></iframe>
+                </div>
+            }
+            .into_any()
         }
-        .into_any(),
         Embed::File(src) => view! {
-            <video class="video-file" src=src controls=true preload="metadata" playsinline=true></video>
+            <video
+                class="video-file"
+                src=src
+                controls=true
+                autoplay=autoplay
+                preload="metadata"
+                playsinline=true
+            ></video>
         }
         .into_any(),
         Embed::Link(href) => view! {
@@ -143,6 +155,13 @@ pub fn Player(url: String, link_label: String) -> impl IntoView {
         }
         .into_any(),
     }
+}
+
+/// A player page's `src`, asking it to start playing: the players `embed`
+/// knows all take `autoplay=1`.
+fn with_autoplay(src: &str) -> String {
+    let sep = if src.contains('?') { '&' } else { '?' };
+    format!("{src}{sep}autoplay=1")
 }
 
 /// Whether `film` lacks the video anyone could give it: the site has videos

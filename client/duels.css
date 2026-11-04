@@ -1,20 +1,25 @@
-/* The duels: the two cards and their VS, each with its video, the tie and
-   skip buttons under them, the chips above, undo and the tally below, and
-   what shows once no duel is left. */
+/* The duels: the chips and the tally above, the two cards and their VS,
+   each poster playing its video and bearing its actions, the bar of undo,
+   tie and skip below, and what shows once no duel is left. */
 
 body.duels-active {
   overflow: hidden;
 }
+/* The height a poster may take beside another, in the duels and in a
+   duel's sheet. */
+:root {
+  --art-h: max(120px, calc(100dvh - var(--header-h) - var(--tabbar-h) - 290px));
+}
 .duels {
-  /* The inner width of a card, of which its video takes 16:9. */
-  --card-inner: calc((min(100vw, 620px) - 42px) / 2 - 16px);
-  --preview-h: 0px;
   height: calc(100dvh - var(--header-h) - var(--tabbar-h));
-  max-width: 620px;
+  /* Two posters of 2:3 at that height, with their cards, the gap and the
+     margins around. */
+  max-width: min(760px, calc(var(--art-h) * 4 / 3 + 82px));
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  padding: 12px 14px 10px;
+  padding: 10px 14px 8px;
+  gap: 8px;
 }
 .duels-tools {
   display: flex;
@@ -22,25 +27,21 @@ body.duels-active {
   justify-content: center;
   gap: 8px;
 }
-.duels:has(.duel-preview) {
-  --preview-h: calc(var(--card-inner) * 9 / 16 + 8px);
-}
 .duels-stage {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 14px;
+  gap: 10px;
 }
 .duel-question {
   padding: 0 12px;
   text-align: center;
-  font-size: clamp(19px, 5vw, 25px);
-  font-weight: 900;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text-muted);
   animation: pop-in 0.4s var(--spring);
 }
 
@@ -150,12 +151,10 @@ body.duels-active {
   animation: none;
 }
 .card-art {
+  position: relative;
   display: flex;
   align-items: center;
-  max-height: max(
-    96px,
-    calc(100dvh - var(--header-h) - var(--tabbar-h) - 405px - var(--preview-h))
-  );
+  max-height: var(--art-h);
   border-radius: 17px;
   overflow: hidden;
 }
@@ -210,88 +209,145 @@ body.duels-active {
   line-height: 1.4;
   white-space: normal;
 }
-/* Its video, whose taps are its own, or the button asking for it. */
-.duel-preview {
-  position: relative;
-  margin-top: 8px;
-  aspect-ratio: 16 / 9;
-  border-radius: 12px;
-  overflow: hidden;
-  background: #000;
-  cursor: auto;
-}
-.duel-preview .video-frame {
+/* Over the poster: the pill that plays its video or asks for it, and the
+   video playing in the poster's place. */
+.art-pills {
   position: absolute;
-  inset: 0;
-  margin: 0;
-  padding: 0;
-  border-radius: 0;
-}
-.duel-preview .video-file {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  border-radius: 0;
-  object-fit: contain;
-}
-.duel-preview .video-link {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 800;
-}
-.duel-preview .video-missing {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  aspect-ratio: auto;
-  border-radius: 12px;
-}
-.duel-preview:has(.video-missing) {
-  background: none;
-}
-.card-actions {
+  inset: auto 0 10px;
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: 6px;
-  margin-top: 8px;
+  padding: 0 8px;
+  pointer-events: none;
 }
-.card-actions:empty {
-  display: none;
-}
-.card-action {
+.art-pill {
+  pointer-events: auto;
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 11px;
+  padding: 7px 12px;
   border-radius: 999px;
-  background: var(--card-alt);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 750;
+  background: rgb(255 255 255 / 92%);
+  color: var(--purple);
+  font-size: 12.5px;
+  font-weight: 850;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgb(29 16 41 / 25%);
+  transition: transform 0.15s var(--spring);
 }
-@media (hover: hover) {
-  .card-action:hover {
-    color: var(--text-strong);
+.art-pill span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.art-pill .icon {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+}
+@media (max-width: 400px) {
+  .art-pill {
+    padding: 7px 10px;
   }
-}
-.card-action .icon {
-  width: 14px;
-  height: 14px;
-}
-/* On a phone, the words alone keep both on one line. */
-@media (max-width: 440px) {
-  .card-action {
-    padding: 5px 9px;
-  }
-  .card-action .icon {
+  .art-missing .icon {
     display: none;
   }
+}
+.art-pill:not(.art-missing) .icon {
+  fill: currentColor;
+}
+.art-missing {
+  background: rgb(29 16 41 / 62%);
+  color: #fff;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+@media (hover: hover) {
+  .art-pill:hover {
+    transform: scale(1.05);
+  }
+}
+.art-player {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  background: #000;
+  cursor: auto;
+}
+.art-player .video-frame {
+  width: 100%;
+  margin: 0;
+  border-radius: 0;
+}
+.art-player .video-file {
+  width: 100%;
+  max-height: 100%;
+  margin: 0;
+  border-radius: 0;
+}
+.art-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 85%);
+  color: var(--text-strong);
+}
+.art-close .icon {
+  width: 15px;
+  height: 15px;
+}
+/* A text card's pill sits under its words. */
+.card-text-only .art-pills {
+  position: static;
+  margin-top: 14px;
+}
+/* The card's actions, in the corners of its poster. */
+.card-corner {
+  position: absolute;
+  top: 14px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgb(29 16 41 / 45%);
+  color: #fff;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition:
+    transform 0.15s var(--spring),
+    background 0.15s ease;
+}
+.corner-start {
+  left: 14px;
+}
+.corner-end {
+  right: 14px;
+}
+.card-corner .icon {
+  width: 16px;
+  height: 16px;
+}
+@media (hover: hover) {
+  .card-corner:hover {
+    transform: scale(1.1);
+    background: rgb(29 16 41 / 70%);
+  }
+}
+.duel-card:has(.card-text-only) .card-corner {
+  background: var(--card-alt);
+  color: var(--text-muted);
+}
+.duel-card.playing .card-corner {
+  display: none;
 }
 .vs {
   position: absolute;
@@ -320,25 +376,19 @@ body.duels-active {
     transform: translate(-50%, -50%) scale(0) rotate(-120deg);
   }
 }
-.duel-calls {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
 .tie-btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 9px 18px;
+  height: 50px;
+  padding: 0 22px;
   border-radius: 999px;
   border: 1.5px solid var(--border);
   background: var(--card);
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 800;
   box-shadow: var(--shadow-s);
-  animation: pop-in 0.4s var(--spring) 0.1s both;
 }
 @media (hover: hover) {
   .tie-btn:hover {
@@ -359,17 +409,20 @@ body.duels-active {
   height: 17px;
 }
 .skip-btn {
-  padding: 6px 14px;
+  min-width: 50px;
+  height: 50px;
+  flex-shrink: 0;
+  padding: 0 14px;
   border-radius: 999px;
+  background: var(--card);
   color: var(--text-muted);
-  font-size: 13.5px;
-  font-weight: 750;
-  animation: pop-in 0.4s var(--spring) 0.14s both;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: var(--shadow-s);
 }
 @media (hover: hover) {
   .skip-btn:hover {
     color: var(--text-strong);
-    background: var(--card-alt);
   }
 }
 .skip-btn:active {
@@ -392,40 +445,33 @@ body.duels-active {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding-top: 10px;
+  gap: 12px;
 }
-/* Holds the tally in the middle, across from undo. */
-.round-btn-space {
-  width: 50px;
-  flex-shrink: 0;
+.duels-bar.idle .tie-btn,
+.duels-bar.idle .skip-btn {
+  visibility: hidden;
 }
+/* How far the viewer is: a thin bar, and the votes cast. */
 .tally {
-  flex: 1;
-  max-width: 260px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  padding: 0 4px;
+}
+.tally .tally-bar {
+  flex: 1;
+  height: 5px;
 }
 .tally-count {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-}
-.tally-count b {
-  font-size: 22px;
-  font-weight: 900;
-  color: var(--text-strong);
-  font-variant-numeric: tabular-nums;
-}
-.tally-count span {
-  font-size: 13px;
+  flex-shrink: 0;
+  font-size: 12.5px;
   font-weight: 750;
   color: var(--text-muted);
 }
-.tally .tally-bar {
-  width: 100%;
+.tally-count b {
+  font-weight: 900;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
 }
 
 .done {
@@ -457,7 +503,7 @@ body.duels-active {
 
 @media (min-width: 720px) {
   .duels {
-    padding-top: 22px;
+    padding-top: 16px;
   }
   .arena {
     gap: 22px;

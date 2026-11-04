@@ -1,17 +1,17 @@
 //! The duels: two items side by side, and the viewer taps the one they
-//! prefer, drags towards it or presses ← or →, calls it a tie with the
-//! button under them or ↑, or skips it, which keeps the pair away for ten
-//! duels, with the button under that or ↓. The winner glows and bursts into
-//! confetti, the loser fades, a tie lights both; the next pair slides in.
-//! Each card plays its item's video, or on an editable site asks for it, and
-//! opens its form. Below sit undo and the votes cast with how far the viewer
-//! is through their duels.
+//! prefer, drags towards it or presses ← or →. The bar below calls it a tie,
+//! also ↑, or skips it, also ↓, which keeps the pair away for ten duels, and
+//! undoes the last vote; above, how far the viewer is through their duels.
+//! The winner glows and bursts into confetti, the loser fades, a tie lights
+//! both; the next pair slides in. A card plays its item's video over its
+//! poster, or on an editable site asks for it, and its corners take it out
+//! of the viewer's selection and open its form.
 
 use crate::api;
 use crate::components::card::CardFace;
 use crate::components::confetti;
 use crate::components::icons::{Icon, icon};
-use crate::components::video::{MissingVideo, Player, misses_video};
+use crate::components::video::{Embed, Player, embed, misses_video};
 use crate::i18n::{fill, or_default, say, t};
 use crate::state::{AppState, Page, PairDoneReason, Panel, Sheet, SiteConfig};
 use crate::timeout::Timeout;
@@ -283,7 +283,7 @@ pub fn DuelsPage() -> impl IntoView {
         }
     };
 
-    let moves_undo = moves.clone();
+    let (undo, tie, skip) = (moves.clone(), moves.clone(), moves.clone());
     let state_bar = state.clone();
     let in_play = move || state_bar.pair.get().is_some();
     let state_undo = state.clone();
@@ -294,18 +294,22 @@ pub fn DuelsPage() -> impl IntoView {
                 <FocusChip />
                 {selects.then(|| view! { <SelectionChip /> })}
             </div>
+            <Tally />
             <div class="duels-stage">{stage}</div>
             <div class="duels-bar" class:idle=move || !in_play()>
                 <button
                     class="round-btn"
                     title=t().undo
                     disabled=move || state_undo.vote_history.get().is_empty()
-                    on:click=move |_| moves_undo.undo()
+                    on:click=move |_| undo.undo()
                 >
                     {icon(Icon::Undo)}
                 </button>
-                <Tally />
-                <span class="round-btn-space" aria-hidden="true"></span>
+                <button class="tie-btn" on:click=move |_| tie.tie()>
+                    {icon(Icon::Equal)}
+                    <span>{t().tie}</span>
+                </button>
+                <button class="skip-btn" on:click=move |_| skip.skip()>{t().skip}</button>
             </div>
         </div>
     }
@@ -332,6 +336,7 @@ fn Arena(draw: u64, a: versus_shared::Film, b: versus_shared::Film, moves: Moves
             let link_label = link_label.clone();
             let state = moves.state.clone();
             let fate = moves.fate;
+            let playing = RwSignal::new(false);
             let class = move || {
                 let base = match side {
                     Side::A => "duel-card side-a",
@@ -354,29 +359,79 @@ fn Arena(draw: u64, a: versus_shared::Film, b: versus_shared::Film, moves: Moves
             });
             let video = Memo::new(move |_| live.with(|f| f.videos.first().map(|v| v.url.clone())));
             let missing = Memo::new(move |_| live.with(misses_video));
-            let edit = Callback::new(move |_| state.open_sheet(Sheet::Edit(id)));
-            // The video plays without voting: its taps and drags stay its own.
-            let preview = move || {
-                let shown = match video.get() {
-                    Some(url) => {
-                        view! { <Player url=url link_label=link_label.clone() /> }.into_any()
+            let edit = Callback::new(move |_: ()| state.open_sheet(Sheet::Edit(id)));
+            // Over the poster: its video playing, the pill that plays it (or
+            // opens it, when it plays elsewhere), or the one asking for it.
+            // Their taps and drags are their own, and never vote.
+            let over = move || {
+                let url = video.get();
+                if playing.get() {
+                    let url = url?;
+                    return Some(
+                        view! {
+                            <div
+                                class="art-player"
+                                on:click=|ev| ev.stop_propagation()
+                                on:pointerdown=|ev| ev.stop_propagation()
+                            >
+                                <Player url=url link_label=link_label.clone() autoplay=true />
+                                <button
+                                    class="art-close"
+                                    title=t().sheet_close
+                                    on:click=move |ev| {
+                                        ev.stop_propagation();
+                                        playing.set(false);
+                                    }
+                                >
+                                    {icon(Icon::X)}
+                                </button>
+                            </div>
+                        }
+                        .into_any(),
+                    );
+                }
+                let pill = match url.map(|url| embed(&url)) {
+                    Some(Embed::Link(href)) => view! {
+                        <a class="art-pill" href=href target="_blank" rel="noopener" on:click=|ev| ev.stop_propagation()>
+                            {icon(Icon::Play)}
+                            <span>{link_label.clone()}</span>
+                        </a>
                     }
-                    None if missing.get() => view! { <MissingVideo on_add=edit /> }.into_any(),
+                    .into_any(),
+                    Some(_) => view! {
+                        <button
+                            class="art-pill"
+                            on:click=move |ev| {
+                                ev.stop_propagation();
+                                playing.set(true);
+                            }
+                        >
+                            {icon(Icon::Play)}
+                            <span>{link_label.clone()}</span>
+                        </button>
+                    }
+                    .into_any(),
+                    None if missing.get() => view! {
+                        <button
+                            class="art-pill art-missing"
+                            on:click=move |ev| {
+                                ev.stop_propagation();
+                                edit.run(());
+                            }
+                        >
+                            {icon(Icon::Clapperboard)}
+                            <span>{t().video_add}</span>
+                        </button>
+                    }
+                    .into_any(),
                     None => return None,
                 };
-                Some(view! {
-                    <div
-                        class="duel-preview"
-                        on:click=|ev| ev.stop_propagation()
-                        on:pointerdown=|ev| ev.stop_propagation()
-                    >
-                        {shown}
-                    </div>
-                })
+                Some(view! { <div class="art-pills" on:pointerdown=|ev| ev.stop_propagation()>{pill}</div> }.into_any())
             };
             view! {
                 <div
                     class=class
+                    class:playing=move || playing.get()
                     id=side.card()
                     role="button"
                     on:click=move |_| {
@@ -385,41 +440,39 @@ fn Arena(draw: u64, a: versus_shared::Film, b: versus_shared::Film, moves: Moves
                         }
                     }
                 >
-                    {move || view! { <CardFace film=live.get() /> }}
-                    {preview}
-                    <div class="card-actions">
-                        {cfg.require_selection.then(|| view! {
-                            <button
-                                class="card-action"
-                                on:click=move |ev| {
-                                    ev.stop_propagation();
-                                    unseen.unseen(side);
-                                }
-                            >
-                                {icon(Icon::EyeOff)}
-                                <span>{unseen_label}</span>
-                            </button>
-                        })}
-                        {cfg.editable.then(|| view! {
-                            <button
-                                class="card-action"
-                                on:click=move |ev| {
-                                    ev.stop_propagation();
-                                    edit.run(());
-                                }
-                            >
-                                {icon(Icon::Pencil)}
-                                <span>{t().sheet_edit}</span>
-                            </button>
-                        })}
-                    </div>
+                    <CardFace film=live>{over}</CardFace>
+                    {cfg.require_selection.then(|| view! {
+                        <button
+                            class="card-corner corner-start"
+                            title=unseen_label.clone()
+                            aria-label=unseen_label
+                            on:click=move |ev| {
+                                ev.stop_propagation();
+                                unseen.unseen(side);
+                            }
+                        >
+                            {icon(Icon::EyeOff)}
+                        </button>
+                    })}
+                    {cfg.editable.then(|| view! {
+                        <button
+                            class="card-corner corner-end"
+                            title=t().sheet_edit
+                            aria-label=t().sheet_edit
+                            on:click=move |ev| {
+                                ev.stop_propagation();
+                                edit.run(());
+                            }
+                        >
+                            {icon(Icon::Pencil)}
+                        </button>
+                    })}
                 </div>
             }
         }
     };
 
     let (down, over, up, cancel) = (moves.clone(), moves.clone(), moves.clone(), moves.clone());
-    let (tie, skip) = (moves.clone(), moves.clone());
     // A drag the pointer abandons puts the cards back.
     let abandon = move |moves: &Moves| {
         if start_x.get_value().is_some() {
@@ -467,13 +520,6 @@ fn Arena(draw: u64, a: versus_shared::Film, b: versus_shared::Film, moves: Moves
             <div class="vs" id=VS aria-hidden="true">"VS"</div>
             {side_card(Side::B, b)}
         </div>
-        <div class="duel-calls">
-            <button class="tie-btn" on:click=move |_| tie.tie()>
-                {icon(Icon::Equal)}
-                <span>{t().tie}</span>
-            </button>
-            <button class="skip-btn" on:click=move |_| skip.skip()>{t().skip}</button>
-        </div>
     }
 }
 
@@ -491,12 +537,13 @@ fn Tally() -> impl IntoView {
     };
     view! {
         <div class="tally">
-            <div class="tally-count">
-                <b>{move || state.vote_count.get()}</b>
-                <span>{move || if state.vote_count.get() == 1 { t().vote_one } else { t().vote_many }}</span>
-            </div>
             <div class="tally-bar">
                 <i style:width=move || format!("{:.1}%", progress())></i>
+            </div>
+            <div class="tally-count">
+                <b>{move || state.vote_count.get()}</b>
+                " "
+                {move || if state.vote_count.get() == 1 { t().vote_one } else { t().vote_many }}
             </div>
         </div>
     }
