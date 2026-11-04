@@ -6,7 +6,7 @@ use crate::components::form::ItemForm;
 use crate::components::frame::SheetFrame;
 use crate::components::history::ItemHistory;
 use crate::components::poster::Poster;
-use crate::components::video::Video;
+use crate::components::video::Versions;
 use crate::i18n::{or_default, say, t};
 use crate::state::{AppState, Sheet, SiteConfig};
 use leptos::prelude::*;
@@ -200,7 +200,7 @@ fn ItemView(film: Film, proposal: Option<Proposal>, mode: RwSignal<Mode>) -> imp
             </div>
         </div>
         {(!film.synopsis.is_empty()).then(|| view! { <p class="item-synopsis">{film.synopsis.clone()}</p> })}
-        {(!film.video_url.is_empty()).then(|| view! { <Video url=film.video_url.clone() link_label=link_label /> })}
+        <Versions videos=film.videos.clone() link_label=link_label />
         {move || error.get().map(|e| view! { <p class="form-error">{e}</p> })}
         {cfg.editable.then(|| view! {
             <button class="history-link" on:click=move |_| mode.set(Mode::History)>

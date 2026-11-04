@@ -1,11 +1,13 @@
 //! The form that edits an item, or proposes a new one: one input per field
-//! the site has, and for the poster an image to upload or a link.
+//! the site has, for the poster an image to upload or a link, and for the
+//! video one row per version, in order.
 
 use crate::components::poster::Poster;
 use crate::i18n::{say, t};
 use crate::state::{AppState, SiteConfig};
 use leptos::prelude::*;
-use versus_shared::{Film, FilmFields};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use versus_shared::{Film, FilmFields, Video};
 use wasm_bindgen::JsCast;
 
 /// What the form calls a field: the site's name for it, the language's when
@@ -35,6 +37,101 @@ fn TextField(label: String, value: RwSignal<String>, #[prop(optional)] url: bool
     }
 }
 
+/// One version as the form edits it; `key` tells rows apart as they move.
+#[derive(Clone, Copy)]
+struct VersionRow {
+    key: usize,
+    label: RwSignal<String>,
+    url: RwSignal<String>,
+}
+
+impl VersionRow {
+    fn new(video: Video) -> Self {
+        static NEXT_KEY: AtomicUsize = AtomicUsize::new(0);
+        VersionRow {
+            key: NEXT_KEY.fetch_add(1, Ordering::Relaxed),
+            label: RwSignal::new(video.label),
+            url: RwSignal::new(video.url),
+        }
+    }
+
+    /// The rows of `videos`; with no version yet, one empty row stands
+    /// ready for a link.
+    fn all(videos: Vec<Video>) -> Vec<Self> {
+        if videos.is_empty() {
+            vec![Self::new(Video::default())]
+        } else {
+            videos.into_iter().map(Self::new).collect()
+        }
+    }
+}
+
+/// The versions in order, each a name and a link that may move up or go.
+#[component]
+fn VersionsField(label: String, rows: RwSignal<Vec<VersionRow>>) -> impl IntoView {
+    let position = move |key: usize| rows.with(|rows| rows.iter().position(|r| r.key == key));
+    view! {
+        <div class="form-field">
+            <span>{label}</span>
+            {move || (rows.with(Vec::len) > 1).then(|| view! { <small class="form-hint">{t().form_versions_hint}</small> })}
+            <For each=move || rows.get() key=|r| r.key let:r>
+                <div class="version-row">
+                    <input
+                        type="text"
+                        class="version-name"
+                        placeholder=t().form_version_name
+                        prop:value=move || r.label.get()
+                        on:input=move |ev| r.label.set(event_target_value(&ev))
+                    />
+                    <input
+                        type="text"
+                        inputmode="url"
+                        class="version-url"
+                        placeholder="https://\u{2026}"
+                        prop:value=move || r.url.get()
+                        on:input=move |ev| r.url.set(event_target_value(&ev))
+                    />
+                    <button
+                        type="button"
+                        class="version-act"
+                        title=t().form_move_up
+                        aria-label=t().form_move_up
+                        disabled=move || position(r.key).is_none_or(|i| i == 0)
+                        on:click=move |_| {
+                            if let Some(i) = position(r.key).filter(|&i| i > 0) {
+                                rows.update(|rows| rows.swap(i - 1, i));
+                            }
+                        }
+                    >"\u{2191}"</button>
+                    <button
+                        type="button"
+                        class="version-act"
+                        title=t().form_remove_version
+                        aria-label=t().form_remove_version
+                        on:click=move |_| rows.update(|rows| rows.retain(|x| x.key != r.key))
+                    >"\u{00D7}"</button>
+                </div>
+            </For>
+            <button
+                type="button"
+                class="version-add"
+                on:click=move |_| rows.update(|rows| rows.push(VersionRow::new(Video::default())))
+            >{t().form_add_version}</button>
+        </div>
+    }
+}
+
+/// The versions the rows hold, those left entirely blank aside.
+fn versions_of(rows: &[VersionRow]) -> Vec<Video> {
+    rows.iter()
+        .map(|r| Video {
+            label: r.label.get_untracked(),
+            url: r.url.get_untracked(),
+        })
+        .filter(|v| !(v.label.trim().is_empty() && v.url.trim().is_empty()))
+        .collect()
+}
+
 /// Edits `film`, or proposes a new item when it is `None`. `on_done` gets the
 /// item's id once saved, or `None` when cancelled.
 #[component]
@@ -50,7 +147,7 @@ pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl In
     let team = RwSignal::new(initial.team);
     let city = RwSignal::new(initial.city);
     let poster = RwSignal::new(initial.poster_url);
-    let video = RwSignal::new(initial.video_url);
+    let version_rows = RwSignal::new(VersionRow::all(initial.videos));
     let synopsis = RwSignal::new(initial.synopsis);
     let error = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
@@ -92,7 +189,7 @@ pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl In
             team: team.get_untracked(),
             city: city.get_untracked(),
             poster_url: poster.get_untracked(),
-            video_url: video.get_untracked(),
+            videos: version_rows.with_untracked(|rows| versions_of(rows)),
             synopsis: synopsis.get_untracked(),
         };
         if fields.title.trim().is_empty() {
@@ -155,7 +252,9 @@ pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl In
                     </div>
                 </div>
             })}
-            {text(&names.video_url, t().field_video, video, true)}
+            {field_label(&names.videos, t().field_video).map(|label| view! {
+                <VersionsField label=label rows=version_rows />
+            })}
             {field_label(&names.synopsis, t().field_synopsis).map(|label| view! {
                 <label class="form-field">
                     <span>{label}</span>

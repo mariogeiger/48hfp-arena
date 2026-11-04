@@ -16,6 +16,7 @@ pub const MAX_UPLOAD: usize = 1 << 20;
 const MAX_TEXT: usize = 200;
 const MAX_URL: usize = 2000;
 const MAX_SYNOPSIS: usize = 2000;
+const MAX_VIDEOS: usize = 10;
 
 fn refuse(status: StatusCode, code: &str) -> HttpResponse {
     HttpResponse::build(status).json(serde_json::json!({ "error": code }))
@@ -63,7 +64,8 @@ fn admit(
 
 /// Trimmed fields, or the code of the first rule they break: a title is
 /// required, text is short and single-line, a synopsis may span lines, links
-/// are http(s) or a poster uploaded here.
+/// are http(s) or a poster uploaded here, and a film has at most a few
+/// versions, each with a link and, when there are several, a name.
 pub fn validated(f: FilmFields) -> Result<FilmFields, &'static str> {
     let text = |s: String| -> Result<String, &'static str> {
         let s = s.trim().to_string();
@@ -94,12 +96,29 @@ pub fn validated(f: FilmFields) -> Result<FilmFields, &'static str> {
             Err("bad_url")
         }
     };
+    if f.videos.len() > MAX_VIDEOS {
+        return Err("too_many_videos");
+    }
+    let several = f.videos.len() > 1;
+    let video = |v: Video| -> Result<Video, &'static str> {
+        let v = Video {
+            label: text(v.label)?,
+            url: link(v.url, false)?,
+        };
+        if v.url.is_empty() {
+            Err("video_url_required")
+        } else if several && v.label.is_empty() {
+            Err("video_label_required")
+        } else {
+            Ok(v)
+        }
+    };
     let fields = FilmFields {
         title: text(f.title)?,
         team: text(f.team)?,
         city: text(f.city)?,
         poster_url: link(f.poster_url, true)?,
-        video_url: link(f.video_url, false)?,
+        videos: f.videos.into_iter().map(video).collect::<Result<_, _>>()?,
         synopsis: synopsis(f.synopsis)?,
     };
     if fields.title.is_empty() {
@@ -293,26 +312,29 @@ pub async fn films_csv(data: web::Data<AppState>, columns: web::Data<Columns>) -
             s.to_string()
         }
     };
-    let slots: [(Option<&String>, fn(&Film) -> &str); 6] = [
-        (Some(&columns.label), |f| &f.title),
-        (columns.sublabel.as_ref(), |f| &f.team),
-        (columns.detail.as_ref(), |f| &f.city),
-        (columns.image.as_ref(), |f| &f.poster_url),
-        (columns.link.as_ref(), |f| &f.video_url),
-        (columns.description.as_ref(), |f| &f.synopsis),
-    ];
-    let slots: Vec<(&String, fn(&Film) -> &str)> = slots
-        .into_iter()
-        .filter_map(|(header, get)| Some((header?, get)))
-        .collect();
+    let slots: Vec<(&String, Field)> = [
+        (Some(&columns.label), Field::Title),
+        (columns.sublabel.as_ref(), Field::Team),
+        (columns.detail.as_ref(), Field::City),
+        (columns.image.as_ref(), Field::Poster),
+        (columns.link.as_ref(), Field::Videos),
+        (columns.description.as_ref(), Field::Synopsis),
+    ]
+    .into_iter()
+    .filter_map(|(header, field)| Some((header?, field)))
+    .collect();
     let line = |cells: Vec<String>| cells.join(",") + "\n";
     let mut csv = line(slots.iter().map(|(header, _)| quote(header)).collect());
     let films = data.films();
     let mut films: Vec<&Film> = films.values().collect();
     films.sort_by_key(|f| f.id);
     for film in films {
+        let fields = film.fields();
         csv.push_str(&line(
-            slots.iter().map(|(_, get)| quote(get(film))).collect(),
+            slots
+                .iter()
+                .map(|&(_, field)| quote(&fields.text(field)))
+                .collect(),
         ));
     }
     HttpResponse::Ok()
@@ -328,7 +350,7 @@ mod tests {
         FilmFields {
             title: title.into(),
             poster_url: poster.into(),
-            video_url: video.into(),
+            videos: Video::parse_lines(video),
             ..Default::default()
         }
     }
@@ -351,5 +373,22 @@ mod tests {
         let mut long = fields("T", "", "");
         long.synopsis = " Une ligne.\r\nUne autre. ".into();
         assert_eq!(validated(long).unwrap().synopsis, "Une ligne.\nUne autre.");
+    }
+
+    #[test]
+    fn versions_need_a_link_and_names_once_there_are_several() {
+        let mut film = fields("T", "", "https://a.ch/1");
+        assert!(validated(film.clone()).is_ok());
+        film.videos.push(Video {
+            label: "Cut".into(),
+            url: "https://a.ch/2".into(),
+        });
+        assert_eq!(validated(film.clone()), Err("video_label_required"));
+        film.videos[0].label = " Original ".into();
+        assert_eq!(validated(film.clone()).unwrap().videos[0].label, "Original");
+        film.videos[1].url = " ".into();
+        assert_eq!(validated(film.clone()), Err("video_url_required"));
+        film.videos = vec![film.videos[0].clone(); MAX_VIDEOS + 1];
+        assert_eq!(validated(film), Err("too_many_videos"));
     }
 }

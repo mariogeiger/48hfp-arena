@@ -126,6 +126,32 @@
     text-decoration: underline;
   }
 }
+.version-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 16px;
+}
+.version-pill {
+  padding: 6px 13px;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.version-pill.version-on {
+  border-color: var(--accent);
+  background: var(--accent);
+  font-weight: 750;
+}
+.version-pills + .video-frame,
+.version-pills + .video-file,
+.version-pills + .video-link {
+  margin-top: 10px;
+}
 
 /* FORM */
 .item-form {
@@ -157,6 +183,48 @@
 .form-field input:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
+}
+.form-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.version-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.form-field .version-row input.version-name {
+  flex: 2;
+  min-width: 0;
+}
+.form-field .version-row input.version-url {
+  flex: 3;
+  min-width: 0;
+}
+.version-act {
+  flex: none;
+  width: 24px;
+  height: 36px;
+  border: none;
+  background: none;
+  color: var(--purple);
+  font-size: 18px;
+  cursor: pointer;
+}
+.version-act:disabled {
+  visibility: hidden;
+}
+.version-add {
+  align-self: flex-start;
+  padding: 6px 13px;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--purple);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 .form-poster {
   display: flex;

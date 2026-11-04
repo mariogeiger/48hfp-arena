@@ -1,7 +1,9 @@
-//! An item's video: played in place when the link is YouTube, YouCraft, Vimeo
-//! or a video file, else offered as a link.
+//! An item's videos: pills choosing a version, over its player. A video plays
+//! in place when the link is YouTube, YouCraft, Vimeo or a video file, else
+//! it is offered as a link.
 
 use leptos::prelude::*;
+use versus_shared::Video;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Embed {
@@ -85,8 +87,37 @@ fn is_video_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+/// The versions of an item, the first one chosen at first. A single version
+/// shows no pill: its name, if any, has nothing to tell apart.
 #[component]
-pub fn Video(url: String, link_label: String) -> impl IntoView {
+pub fn Versions(videos: Vec<Video>, link_label: String) -> impl IntoView {
+    let chosen = RwSignal::new(0usize);
+    let pills = (videos.len() > 1).then(|| {
+        view! {
+            <div class="version-pills">
+                {videos.iter().enumerate().map(|(i, video)| view! {
+                    <button
+                        type="button"
+                        class="version-pill"
+                        class:version-on=move || chosen.get() == i
+                        aria-pressed=move || (chosen.get() == i).to_string()
+                        on:click=move |_| chosen.set(i)
+                    >
+                        {video.label.clone()}
+                    </button>
+                }).collect_view()}
+            </div>
+        }
+    });
+    let player = move || {
+        let url = videos.get(chosen.get())?.url.clone();
+        Some(view! { <Player url=url link_label=link_label.clone() /> })
+    };
+    view! { {pills} {player} }
+}
+
+#[component]
+pub fn Player(url: String, link_label: String) -> impl IntoView {
     match embed(&url) {
         Embed::Frame(src) => view! {
             <div class="video-frame">

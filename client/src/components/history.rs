@@ -6,7 +6,7 @@ use crate::i18n::{fill, lang, t};
 use crate::state::{AppState, SiteConfig};
 use crate::wiki::History;
 use leptos::prelude::*;
-use versus_shared::{Change, FilmFields, HistoryEntry};
+use versus_shared::{Change, Field, FilmFields, HistoryEntry};
 
 /// One row of the history: a revision, or the original version (`rev` 0).
 struct Row {
@@ -24,32 +24,18 @@ fn changes(before: Option<&FilmFields>, after: &FilmFields) -> Vec<(String, Stri
     let empty = FilmFields::default();
     let before = before.unwrap_or(&empty);
     let slots = [
-        (&names.title, t().field_title, &before.title, &after.title),
-        (&names.team, t().field_team, &before.team, &after.team),
-        (&names.city, t().field_city, &before.city, &after.city),
-        (
-            &names.poster_url,
-            t().field_poster,
-            &before.poster_url,
-            &after.poster_url,
-        ),
-        (
-            &names.video_url,
-            t().field_video,
-            &before.video_url,
-            &after.video_url,
-        ),
-        (
-            &names.synopsis,
-            t().field_synopsis,
-            &before.synopsis,
-            &after.synopsis,
-        ),
+        (&names.title, t().field_title, Field::Title),
+        (&names.team, t().field_team, Field::Team),
+        (&names.city, t().field_city, Field::City),
+        (&names.poster_url, t().field_poster, Field::Poster),
+        (&names.videos, t().field_video, Field::Videos),
+        (&names.synopsis, t().field_synopsis, Field::Synopsis),
     ];
     slots
         .into_iter()
+        .map(|(name, words, field)| (name, words, before.text(field), after.text(field)))
         .filter(|(_, _, b, a)| b != a)
-        .filter_map(|(name, words, b, a)| Some((field_label(name, words)?, b.clone(), a.clone())))
+        .filter_map(|(name, words, b, a)| Some((field_label(name, words)?, b, a)))
         .collect()
 }
 

@@ -24,7 +24,7 @@ pub struct Columns {
     /// Image URL column (→ `Film.poster_url`).
     #[serde(default)]
     pub image: Option<String>,
-    /// External link column (→ `Film.video_url`).
+    /// Video column, one version per line as `label url` (→ `Film.videos`).
     #[serde(default)]
     pub link: Option<String>,
     /// Long text column, several lines (→ `Film.synopsis`). The column may be
@@ -261,7 +261,7 @@ impl SiteConfig {
             "team": name(&l.sublabel, &c.sublabel),
             "city": name(&l.detail, &c.detail),
             "poster_url": name(&l.image, &c.image),
-            "video_url": name(&l.link, &c.link),
+            "videos": name(&l.link, &c.link),
             "synopsis": name(&l.description, &c.description),
         })
     }

@@ -26,6 +26,11 @@ someone other than its author approves it. Writes are rate-limited per user
 and per address, and the authors in `banned.txt` count for nothing.
 `/api/films.csv` gives the current catalog in the shape of `data.csv`.
 
+An item may have several versions of its video (the original, a director's
+cut…), the first one opening by default; they need names once there are
+several. In `data.csv` the video column holds one version per line, as
+`name link` or a bare link.
+
 `lang = "fr"` or `"en"` chooses the interface's language (`client/src/i18n.rs`);
 the copy a site sets in its `site.toml` takes precedence.
 

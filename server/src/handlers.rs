@@ -478,7 +478,7 @@ pub async fn leaderboard(data: web::Data<AppState>) -> HttpResponse {
                 "team": film.map(|f| f.team.as_str()).unwrap_or("?"),
                 "city": film.map(|f| f.city.as_str()).unwrap_or("?"),
                 "poster_url": film.map(|f| f.poster_url.as_str()).unwrap_or(""),
-                "video_url": film.map(|f| f.video_url.as_str()).unwrap_or(""),
+                "videos": film.map(|f| f.videos.as_slice()).unwrap_or_default(),
                 "rating": bt_score_to_display(r.score),
                 "wins": r.wins(),
                 "ties": r.ties(),

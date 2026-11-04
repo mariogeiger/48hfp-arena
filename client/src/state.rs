@@ -61,7 +61,7 @@ pub struct FieldNames {
     pub team: Option<String>,
     pub city: Option<String>,
     pub poster_url: Option<String>,
-    pub video_url: Option<String>,
+    pub videos: Option<String>,
     #[serde(default)]
     pub synopsis: Option<String>,
 }
@@ -73,7 +73,7 @@ impl Default for FieldNames {
             team: Some(String::new()),
             city: Some(String::new()),
             poster_url: Some(String::new()),
-            video_url: Some(String::new()),
+            videos: Some(String::new()),
             synopsis: None,
         }
     }

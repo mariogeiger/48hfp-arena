@@ -7,8 +7,8 @@ pub struct Film {
     pub team: String,
     pub city: String,
     pub poster_url: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub video_url: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub videos: Vec<Video>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub synopsis: String,
 }
@@ -20,24 +20,130 @@ impl Film {
             team: self.team.clone(),
             city: self.city.clone(),
             poster_url: self.poster_url.clone(),
-            video_url: self.video_url.clone(),
+            videos: self.videos.clone(),
             synopsis: self.synopsis.clone(),
         }
     }
 }
 
+/// One version of a film (the original, a director's cut, a subtitled
+/// one…): its name, which may stay empty when it is the film's only one, and
+/// its link.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Video {
+    pub label: String,
+    pub url: String,
+}
+
+impl Video {
+    /// The versions written one per line as `label url`, the link being the
+    /// line's last word since a link holds no space; a bare link is a version
+    /// without a name, and blank lines are skipped.
+    pub fn parse_lines(text: &str) -> Vec<Video> {
+        text.lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(|line| match line.rsplit_once(char::is_whitespace) {
+                Some((label, url)) => Video {
+                    label: label.trim().into(),
+                    url: url.into(),
+                },
+                None => Video {
+                    label: String::new(),
+                    url: line.into(),
+                },
+            })
+            .collect()
+    }
+
+    /// The inverse of `parse_lines`.
+    pub fn to_lines(videos: &[Video]) -> String {
+        videos
+            .iter()
+            .map(|v| match v.label.as_str() {
+                "" => v.url.clone(),
+                label => format!("{label} {}", v.url),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
 /// Everything about a film that people may edit: a film without its id.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "KeptFields")]
 pub struct FilmFields {
     pub title: String,
     pub team: String,
     pub city: String,
     pub poster_url: String,
-    pub video_url: String,
-    /// Several lines of free text; revisions written before it existed read
-    /// it as empty.
-    #[serde(default)]
+    /// In the order people chose, the first one opening by default.
+    pub videos: Vec<Video>,
+    /// Several lines of free text.
     pub synopsis: String,
+}
+
+/// A field of a film, to treat them all alike as text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Field {
+    Title,
+    Team,
+    City,
+    Poster,
+    Videos,
+    Synopsis,
+}
+
+impl FilmFields {
+    /// `field` as text, its versions one per line as `Video::to_lines`
+    /// writes them.
+    pub fn text(&self, field: Field) -> String {
+        match field {
+            Field::Title => self.title.clone(),
+            Field::Team => self.team.clone(),
+            Field::City => self.city.clone(),
+            Field::Poster => self.poster_url.clone(),
+            Field::Videos => Video::to_lines(&self.videos),
+            Field::Synopsis => self.synopsis.clone(),
+        }
+    }
+}
+
+/// `FilmFields` as the journal keeps them, which is never rewritten: a
+/// revision written before a film had versions holds its one link as
+/// `video_url`, and one written before synopses has none.
+#[derive(Deserialize)]
+struct KeptFields {
+    title: String,
+    team: String,
+    city: String,
+    poster_url: String,
+    #[serde(default)]
+    videos: Vec<Video>,
+    #[serde(default)]
+    video_url: String,
+    #[serde(default)]
+    synopsis: String,
+}
+
+impl From<KeptFields> for FilmFields {
+    fn from(k: KeptFields) -> Self {
+        let mut videos = k.videos;
+        if videos.is_empty() && !k.video_url.is_empty() {
+            videos.push(Video {
+                label: String::new(),
+                url: k.video_url,
+            });
+        }
+        FilmFields {
+            title: k.title,
+            team: k.team,
+            city: k.city,
+            poster_url: k.poster_url,
+            videos,
+            synopsis: k.synopsis,
+        }
+    }
 }
 
 impl FilmFields {
@@ -48,7 +154,7 @@ impl FilmFields {
             team: self.team,
             city: self.city,
             poster_url: self.poster_url,
-            video_url: self.video_url,
+            videos: self.videos,
             synopsis: self.synopsis,
         }
     }
@@ -323,6 +429,44 @@ pub fn parse_pair_list(list: &str) -> Vec<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn versions_read_one_per_line_with_the_link_last() {
+        let videos = Video::parse_lines(" Original 48h  https://a.ch/1 \n\nhttps://b.ch/2\r\n");
+        assert_eq!(
+            videos,
+            vec![
+                Video {
+                    label: "Original 48h".into(),
+                    url: "https://a.ch/1".into()
+                },
+                Video {
+                    label: String::new(),
+                    url: "https://b.ch/2".into()
+                },
+            ]
+        );
+        assert_eq!(
+            Video::to_lines(&videos),
+            "Original 48h https://a.ch/1\nhttps://b.ch/2"
+        );
+        assert_eq!(Video::parse_lines(&Video::to_lines(&videos)), videos);
+        assert!(Video::parse_lines("").is_empty());
+    }
+
+    #[test]
+    fn fields_kept_with_one_video_url_read_as_one_version() {
+        let old =
+            r#"{"title":"T","team":"","city":"","poster_url":"","video_url":"https://a.ch/1"}"#;
+        let fields: FilmFields = serde_json::from_str(old).unwrap();
+        assert_eq!(fields.videos, Video::parse_lines("https://a.ch/1"));
+        let none = r#"{"title":"T","team":"","city":"","poster_url":"","video_url":""}"#;
+        let fields: FilmFields = serde_json::from_str(none).unwrap();
+        assert!(fields.videos.is_empty());
+        let again: FilmFields =
+            serde_json::from_str(&serde_json::to_string(&fields).unwrap()).unwrap();
+        assert_eq!(again, fields);
+    }
 
     #[test]
     fn pair_lists_read_back_in_order_and_canonical() {

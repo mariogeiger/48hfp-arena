@@ -1,5 +1,5 @@
 use crate::config::SiteConfig;
-use versus_shared::Film;
+use versus_shared::{Film, Video};
 
 /// Split CSV text into records of fields, honoring double-quoted fields
 /// (which may hold commas and line breaks) and `""` escapes. Surrounding
@@ -90,7 +90,7 @@ pub fn parse_csv(content: &str, cfg: &SiteConfig) -> Vec<Film> {
             {
                 poster_url = apply_template(tpl, &headers, &fields);
             }
-            let video_url = get(link_idx);
+            let videos = Video::parse_lines(&get(link_idx));
             let synopsis = get(description_idx);
 
             Some(Film {
@@ -99,7 +99,7 @@ pub fn parse_csv(content: &str, cfg: &SiteConfig) -> Vec<Film> {
                 team,
                 city,
                 poster_url,
-                video_url,
+                videos,
                 synopsis,
             })
         })
@@ -121,5 +121,19 @@ mod tests {
         assert_eq!(films.len(), 2);
         assert_eq!(films[0].synopsis, "One, two.\nThree \"four\".");
         assert_eq!((films[1].id, films[1].title.as_str()), (2, "B"));
+    }
+
+    #[test]
+    fn a_video_cell_holds_one_version_per_line() {
+        let cfg: SiteConfig = toml::from_str(
+            "display_name = \"x\"\n[columns]\nlabel = \"Title\"\nlink = \"Video\"\n",
+        )
+        .unwrap();
+        let csv = "Title,Video\nA,https://a.ch/1\nB,\"Original https://b.ch/1\nDirector's cut https://b.ch/2\"\nC,\n";
+        let films = parse_csv(csv, &cfg);
+        assert_eq!(films[0].videos, Video::parse_lines("https://a.ch/1"));
+        let labels: Vec<&str> = films[1].videos.iter().map(|v| v.label.as_str()).collect();
+        assert_eq!(labels, ["Original", "Director's cut"]);
+        assert!(films[2].videos.is_empty());
     }
 }
