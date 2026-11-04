@@ -5,8 +5,9 @@
 use crate::components::form::ItemForm;
 use crate::components::frame::SheetFrame;
 use crate::components::history::ItemHistory;
+use crate::components::icons::{Icon, icon};
 use crate::components::poster::Poster;
-use crate::components::video::Versions;
+use crate::components::video::{MissingVideo, Versions, misses_video};
 use crate::i18n::{or_default, say, t};
 use crate::state::{AppState, Sheet, SiteConfig};
 use leptos::prelude::*;
@@ -38,17 +39,6 @@ fn find(state: &AppState, id: usize) -> Option<(Film, Option<Proposal>)> {
 #[component]
 pub fn ItemSheet() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
-    let mode = RwSignal::new(Mode::View);
-
-    // Each item opens on its view.
-    Effect::new({
-        let state = state.clone();
-        move || {
-            state.sheet.track();
-            mode.set(Mode::View);
-        }
-    });
-
     let state_close = state.clone();
     let close = move || state_close.close_sheet();
 
@@ -71,8 +61,26 @@ pub fn ItemSheet() -> impl IntoView {
                 }
                 .into_any()
             }
-            Sheet::Item(id) => {
+            Sheet::Item(id) | Sheet::Edit(id) => {
                 let state = state.clone();
+                // Each item opens on its view, or on its form when asked for
+                // it, and the form opened so closes the sheet when done.
+                let straight_to_form = sheet == Sheet::Edit(id);
+                let mode = RwSignal::new(if straight_to_form {
+                    Mode::Edit
+                } else {
+                    Mode::View
+                });
+                let form_done = {
+                    let state = state.clone();
+                    Callback::new(move |_| {
+                        if straight_to_form {
+                            state.close_sheet();
+                        } else {
+                            mode.set(Mode::View);
+                        }
+                    })
+                };
                 (move || {
                     // Only the view follows the item live: a change arriving
                     // meanwhile must not rebuild the form or the history.
@@ -87,10 +95,7 @@ pub fn ItemSheet() -> impl IntoView {
                             view! { <p class="sheet-hint">{t().error_unknown_film}</p> }.into_any()
                         }
                         (Some((film, _)), Mode::Edit) => view! {
-                            <ItemForm
-                                film=Some(film)
-                                on_done=Callback::new(move |_| mode.set(Mode::View))
-                            />
+                            <ItemForm film=Some(film) on_done=form_done />
                         }
                         .into_any(),
                         (Some((film, _)), Mode::History) => view! {
@@ -190,9 +195,7 @@ fn ItemView(film: Film, proposal: Option<Proposal>, mode: RwSignal<Mode>) -> imp
                 {standing}
                 {cfg.editable.then(|| view! {
                     <button class="edit-pill" on:click=move |_| mode.set(Mode::Edit)>
-                        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-                            <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.21a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-                        </svg>
+                        {icon(Icon::Pencil)}
                         {t().sheet_edit}
                     </button>
                 })}
@@ -200,7 +203,11 @@ fn ItemView(film: Film, proposal: Option<Proposal>, mode: RwSignal<Mode>) -> imp
             </div>
         </div>
         {(!film.synopsis.is_empty()).then(|| view! { <p class="item-synopsis">{film.synopsis.clone()}</p> })}
-        <Versions videos=film.videos.clone() link_label=link_label />
+        {if misses_video(&film) {
+            view! { <MissingVideo on_add=Callback::new(move |_| mode.set(Mode::Edit)) /> }.into_any()
+        } else {
+            view! { <Versions videos=film.videos.clone() link_label=link_label /> }.into_any()
+        }}
         {move || error.get().map(|e| view! { <p class="form-error">{e}</p> })}
         {cfg.editable.then(|| view! {
             <button class="history-link" on:click=move |_| mode.set(Mode::History)>

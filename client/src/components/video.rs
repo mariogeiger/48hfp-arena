@@ -1,9 +1,13 @@
 //! An item's videos: pills choosing a version, over its player. A video plays
 //! in place when the link is YouTube, YouCraft, Vimeo or a video file, else
-//! it is offered as a link.
+//! it is offered as a link. Where an editable site's item has none, a button
+//! of the player's size asks for one.
 
+use crate::components::icons::{Icon, icon};
+use crate::i18n::t;
+use crate::state::SiteConfig;
 use leptos::prelude::*;
-use versus_shared::Video;
+use versus_shared::{Film, Video};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Embed {
@@ -138,6 +142,33 @@ pub fn Player(url: String, link_label: String) -> impl IntoView {
             <a class="video-link" href=href target="_blank" rel="noopener">{link_label}</a>
         }
         .into_any(),
+    }
+}
+
+/// Whether `film` lacks the video anyone could give it: the site has videos
+/// and lets its items be edited, and this one has none.
+pub fn misses_video(film: &Film) -> bool {
+    let cfg = SiteConfig::get();
+    cfg.editable && cfg.fields.videos.is_some() && film.videos.is_empty()
+}
+
+/// Where the video of an item that has none would play: a button that
+/// opens its form.
+#[component]
+pub fn MissingVideo(on_add: Callback<()>) -> impl IntoView {
+    view! {
+        <button
+            type="button"
+            class="video-missing"
+            on:click=move |ev| {
+                ev.stop_propagation();
+                on_add.run(());
+            }
+        >
+            {icon(Icon::Clapperboard)}
+            <b>{t().video_missing}</b>
+            <span>{t().video_add}</span>
+        </button>
     }
 }
 

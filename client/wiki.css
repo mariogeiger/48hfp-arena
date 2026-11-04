@@ -126,6 +126,46 @@
     text-decoration: underline;
   }
 }
+/* Where a missing video would play: a button asking for its link. */
+.video-missing {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  background: var(--card-alt);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.video-missing .icon {
+  width: 22px;
+  height: 22px;
+  margin-bottom: 2px;
+}
+.video-missing b {
+  font-weight: 800;
+  color: var(--text);
+}
+.video-missing span {
+  color: var(--purple);
+  font-weight: 750;
+}
+@media (hover: hover) {
+  .video-missing:hover {
+    border-color: var(--accent);
+    color: var(--text-strong);
+  }
+}
 .version-pills {
   display: flex;
   flex-wrap: wrap;

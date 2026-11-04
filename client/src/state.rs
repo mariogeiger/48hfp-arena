@@ -430,12 +430,23 @@ pub struct Handoff {
     pub own_votes: usize,
 }
 
-/// What the item sheet shows: an item, published or proposed, or the form
-/// for proposing a new one.
+/// What the item sheet shows: an item, published or proposed, its edit form
+/// straight away, or the form for proposing a new one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sheet {
     Item(usize),
+    Edit(usize),
     New,
+}
+
+impl Sheet {
+    /// The item shown, if any.
+    pub fn item(self) -> Option<usize> {
+        match self {
+            Sheet::Item(id) | Sheet::Edit(id) => Some(id),
+            Sheet::New => None,
+        }
+    }
 }
 
 impl AppState {
@@ -512,7 +523,7 @@ impl AppState {
 
     /// Open the sheet of an item; its link is `#film/<id>`.
     pub fn open_sheet(&self, sheet: Sheet) {
-        if let Sheet::Item(id) = sheet {
+        if let Some(id) = sheet.item() {
             let _ = web_sys::window()
                 .unwrap()
                 .location()
@@ -538,7 +549,7 @@ impl AppState {
                 crate::identity::offer_handoff(&state, &other).await;
             });
         } else if let Some(id) = hash.strip_prefix("film/").and_then(|id| id.parse().ok()) {
-            if self.sheet.get_untracked() != Some(Sheet::Item(id)) {
+            if self.sheet.get_untracked().and_then(Sheet::item) != Some(id) {
                 self.open_sheet(Sheet::Item(id));
             }
         } else if let Some(page) = Page::from_str(hash) {

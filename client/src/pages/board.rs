@@ -1,11 +1,13 @@
 //! The ranking: a podium for the first three, the others below, then the
 //! items without enough votes yet in a random order, then on an editable
-//! site the proposals, and behind the scenes how it all adds up. Drawn as
-//! HTML so that items slide to their new place when the ranking moves.
+//! site the proposals, and behind the scenes how it all adds up; an item
+//! still missing its video says so. Drawn as HTML so that items slide to
+//! their new place when the ranking moves.
 
 use crate::api::html_escape;
 use crate::components::card::meta;
 use crate::components::poster::{give_way_to_tile, poster_html};
+use crate::components::video::misses_video;
 use crate::i18n::{or_default, record, say, t};
 use crate::state::{AppState, LeaderboardEntry, Page, Sheet, SiteConfig};
 use leptos::prelude::*;
@@ -112,12 +114,14 @@ fn board_html(
                 r#"<button class="podium-spot place-{place}" data-film-id="{id}">
                     <span class="podium-art">{art}<span class="podium-medal">{place}</span></span>
                     <span class="podium-title">{title}</span>
+                    {missing}
                     <span class="board-score">{score}</span>
                     <span class="podium-step"></span>
                 </button>"#,
                 id = film.id,
                 art = poster_html(&film.poster_url, &film.title, film.id),
                 title = html_escape(&film.title),
+                missing = missing_html(film),
                 score = item.rating.round() as i64,
             ));
         }
@@ -167,13 +171,27 @@ fn row_html(rank: &str, film: &Film, stats: &str) -> String {
             <span class="board-info">
                 <span class="board-title">{title}</span>
                 <span class="board-meta">{meta}</span>
+                {missing}
             </span>
             <span class="board-stats">{stats}</span>
         </div>"#,
         id = film.id,
         title = html_escape(&film.title),
         meta = html_escape(&meta(film)),
+        missing = missing_html(film),
     )
+}
+
+/// The label of an item still missing its video, which a tap on it adds.
+fn missing_html(film: &Film) -> String {
+    if misses_video(film) {
+        format!(
+            r#"<span class="missing-badge">{}</span>"#,
+            html_escape(t().video_missing)
+        )
+    } else {
+        String::new()
+    }
 }
 
 /// Where each item stood and what it scored, before a redraw.

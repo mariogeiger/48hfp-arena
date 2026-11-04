@@ -182,6 +182,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* An item still missing its video. */
+.missing-badge {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: #8a5a00;
+  font-size: 10.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.podium-spot .missing-badge {
+  align-self: center;
+  margin-top: 0;
+}
 .board-stats {
   flex-shrink: 0;
   display: flex;

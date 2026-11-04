@@ -253,6 +253,8 @@ pub struct Words {
     // Wiki
     pub sheet_close: &'static str,
     pub sheet_edit: &'static str,
+    pub video_missing: &'static str,
+    pub video_add: &'static str,
     pub sheet_history: &'static str,
     pub sheet_back: &'static str,
     pub form_save: &'static str,
@@ -471,6 +473,8 @@ pub static EN: Words = Words {
 
     sheet_close: "Close",
     sheet_edit: "Edit",
+    video_missing: "No video yet",
+    video_add: "Add its link",
     sheet_history: "History",
     sheet_back: "Back",
     form_save: "Save",
@@ -663,6 +667,8 @@ pub static FR: Words = Words {
 
     sheet_close: "Fermer",
     sheet_edit: "Modifier",
+    video_missing: "Vid\u{00E9}o manquante",
+    video_add: "Ajouter le lien",
     sheet_history: "Historique",
     sheet_back: "Retour",
     form_save: "Enregistrer",
