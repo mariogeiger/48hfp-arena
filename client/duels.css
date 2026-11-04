@@ -30,9 +30,8 @@ body.duels-active {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: safe center;
+  justify-content: center;
   gap: 14px;
-  overflow-y: auto;
 }
 .duel-question {
   padding: 0 12px;
@@ -155,7 +154,7 @@ body.duels-active {
   align-items: center;
   max-height: max(
     96px,
-    calc(100dvh - var(--header-h) - var(--tabbar-h) - 395px - var(--preview-h))
+    calc(100dvh - var(--header-h) - var(--tabbar-h) - 405px - var(--preview-h))
   );
   border-radius: 17px;
   overflow: hidden;
@@ -325,7 +324,7 @@ body.duels-active {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 12px;
 }
 .tie-btn {
   display: inline-flex;

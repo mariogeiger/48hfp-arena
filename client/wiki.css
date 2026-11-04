@@ -147,6 +147,9 @@
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease;
 }
+.video-missing:focus:not(:focus-visible) {
+  outline: none;
+}
 .video-missing .icon {
   width: 22px;
   height: 22px;
