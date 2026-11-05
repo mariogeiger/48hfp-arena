@@ -1,7 +1,8 @@
-//! The account, top right. Signed out, a button says so, and opens a sheet
-//! to sign in with Google or to continue on another device through a link or
-//! its QR code. Signed in with Google, which does both and better, it shows
-//! one's picture or initial, and its sheet who one is and how to sign out.
+//! The account, top right. Its sheet leads to the viewer's own votes, and
+//! signed out, to signing in with Google or continuing on another device
+//! through a link or its QR code. Signed in with Google, which does both and
+//! better, the button shows one's picture or initial, and the sheet who one
+//! is and how to sign out.
 //! A `#continue/…` link asks here whether the viewer takes up the identity
 //! it carries.
 
@@ -9,7 +10,7 @@ use crate::components::frame::SheetFrame;
 use crate::components::icons::{Icon, icon};
 use crate::i18n::{fill, t};
 use crate::identity;
-use crate::state::{AppState, GoogleProfile, Panel, SiteConfig};
+use crate::state::{AppState, GoogleProfile, Page, Panel, SiteConfig};
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
@@ -159,8 +160,14 @@ fn AccountBody() -> impl IntoView {
         .into_any(),
     };
 
+    let votes = move |_| state.navigate(Page::Me);
+
     view! {
         {head}
+        <button class="cta account-votes" on:click=votes>
+            {icon(Icon::Ballot)}
+            <span>{t().tab_me}</span>
+        </button>
         {ways}
     }
 }

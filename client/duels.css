@@ -8,10 +8,10 @@ body.duels-active {
 /* The height a poster may take beside another, in the duels and in a
    duel's sheet. */
 :root {
-  --art-h: max(120px, calc(100dvh - var(--header-h) - var(--tabbar-h) - 290px));
+  --art-h: max(120px, calc(100dvh - var(--header-h) - 290px));
 }
 .duels {
-  height: calc(100dvh - var(--header-h) - var(--tabbar-h));
+  height: calc(100dvh - var(--header-h) - env(safe-area-inset-bottom));
   /* Two posters of 2:3 at that height, with their cards, the gap and the
      margins around. */
   max-width: min(760px, calc(var(--art-h) * 4 / 3 + 82px));

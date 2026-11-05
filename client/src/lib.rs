@@ -141,7 +141,6 @@ fn App() -> impl IntoView {
     let page = state.page;
     view! {
         <components::shell::Header />
-        <components::shell::Tabs />
         <main class="main">
             <div class="page page-duels" class:active=move || page.get() == Page::Duels>
                 <pages::duels::DuelsPage />

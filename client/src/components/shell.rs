@@ -1,6 +1,6 @@
-//! The bar on top of every page, with the site's name and the account, and
-//! the tabs: in the middle of the bar on a wide screen, at the bottom of
-//! the screen under the thumb on a phone (see `style.css`).
+//! The bar on top of every page: the site's name, the tabs of the duels and
+//! of the ranking, of which only the page shown says its name, and the
+//! account, which also leads to the viewer's own votes.
 
 use crate::components::account::AccountButton;
 use crate::components::icons::{Icon, icon};
@@ -16,16 +16,16 @@ pub fn Header() -> impl IntoView {
     view! {
         <header class="topbar">
             <button class="brand" on:click=move |_| state.navigate(home)>
-                <span class="brand-mark">"VS"</span>
                 <span class="brand-name">{cfg.display_name.clone()}</span>
             </button>
+            <Tabs />
             <AccountButton />
         </header>
     }
 }
 
 #[component]
-pub fn Tabs() -> impl IntoView {
+fn Tabs() -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
     let page = state.page;
     let pulse = state.live_pulse;
@@ -45,7 +45,13 @@ pub fn Tabs() -> impl IntoView {
         };
         let fresh = move || target == Page::Board && pulse.get() > seen.get() && !active();
         view! {
-            <button class="tab" class:active=active on:click=move |_| state.navigate(target)>
+            <button
+                class="tab"
+                class:active=active
+                title=label
+                aria-label=label
+                on:click=move |_| state.navigate(target)
+            >
                 <span class="tab-icon">
                     {icon(glyph)}
                     {move || fresh().then(|| view! { <i class="pulse"></i> })}
@@ -59,7 +65,6 @@ pub fn Tabs() -> impl IntoView {
         <nav class="tabs">
             {tab(Page::Duels, Icon::Swords, t().tab_duels)}
             {tab(Page::Board, Icon::Trophy, t().tab_board)}
-            {tab(Page::Me, Icon::Ballot, t().tab_me)}
         </nav>
     }
 }

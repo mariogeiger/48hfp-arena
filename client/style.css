@@ -49,12 +49,10 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --header-h: 60px;
-  --tabbar-h: 0px;
 }
 @media (max-width: 719px) {
   :root {
     --header-h: 56px;
-    --tabbar-h: calc(64px + env(safe-area-inset-bottom));
   }
 }
 
@@ -77,7 +75,7 @@ body {
     var(--bg);
   background-attachment: fixed;
   min-height: 100dvh;
-  padding-bottom: var(--tabbar-h);
+  padding-bottom: env(safe-area-inset-bottom);
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
 }
@@ -107,16 +105,16 @@ input {
   flex-shrink: 0;
 }
 
-/* THE BAR ON TOP */
+/* THE BAR ON TOP: the name, the tabs in the middle, the account. */
 .topbar {
   position: sticky;
   top: 0;
   z-index: 100;
   height: var(--header-h);
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   padding: 0 16px;
   background: rgb(255 255 255 / 78%);
   backdrop-filter: saturate(180%) blur(16px);
@@ -124,33 +122,13 @@ input {
   border-bottom: 1px solid rgb(227 214 234 / 70%);
 }
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  justify-self: start;
+  max-width: 100%;
   min-width: 0;
-}
-.brand-mark {
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  border-radius: 11px;
-  background: linear-gradient(135deg, var(--purple), #a83fbf);
-  color: var(--gold);
-  font-weight: 900;
-  font-size: 13px;
-  letter-spacing: 0.02em;
-  transform: rotate(-7deg);
-  box-shadow: 0 4px 12px rgb(116 42 133 / 35%);
-  transition: transform 0.3s var(--spring);
-}
-@media (hover: hover) {
-  .brand:hover .brand-mark {
-    transform: rotate(7deg) scale(1.08);
-  }
+  text-align: left;
 }
 .brand-name {
+  display: block;
   font-weight: 800;
   font-size: 17px;
   color: var(--text-strong);
@@ -159,25 +137,19 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-/* Wide screens: the tabs sit in the middle of the bar on top. */
+/* The tabs: only the page shown says its name. */
 .tabs {
-  position: fixed;
-  top: calc((var(--header-h) - 44px) / 2);
-  left: 50%;
-  z-index: 101;
   display: flex;
-  gap: 4px;
-  padding: 4px;
+  gap: 2px;
+  padding: 3px;
   background: var(--card-alt);
   border-radius: 999px;
-  transform: translateX(-50%);
 }
 .tab {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: 7px;
+  padding: 8px 11px;
   border-radius: 999px;
   font-weight: 750;
   font-size: 14px;
@@ -193,9 +165,13 @@ input {
   }
 }
 .tab.active {
+  padding: 8px 15px 8px 13px;
   background: var(--card);
   color: var(--purple);
   box-shadow: var(--shadow-s);
+}
+.tab:not(.active) .tab-label {
+  display: none;
 }
 .tab-icon {
   position: relative;
@@ -225,58 +201,8 @@ input {
   }
 }
 
-/* On a phone the tabs sit at the bottom, under the thumb. */
-@media (max-width: 719px) {
-  .topbar {
-    padding: 0 12px 0 14px;
-  }
-  .tabs {
-    top: auto;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 100;
-    transform: none;
-    height: var(--tabbar-h);
-    gap: 0;
-    padding: 6px 8px env(safe-area-inset-bottom);
-    border-radius: 0;
-    background: rgb(255 255 255 / 90%);
-    backdrop-filter: saturate(180%) blur(16px);
-    -webkit-backdrop-filter: saturate(180%) blur(16px);
-    border-top: 1px solid rgb(227 214 234 / 80%);
-  }
-  .tab {
-    flex: 1;
-    flex-direction: column;
-    justify-content: center;
-    gap: 4px;
-    padding: 4px;
-    font-size: 11.5px;
-  }
-  .tab.active {
-    background: none;
-    box-shadow: none;
-  }
-  .tab .icon {
-    width: 23px;
-    height: 23px;
-  }
-  .tab-icon {
-    padding: 4px 18px;
-    border-radius: 999px;
-    transition: background 0.25s var(--ease-out);
-  }
-  .tab.active .tab-icon {
-    background: var(--accent-bg);
-  }
-  .pulse {
-    top: 2px;
-    right: 12px;
-  }
-}
-
 .account-btn {
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -326,6 +252,21 @@ input {
 .avatar-blank .icon {
   width: 55%;
   height: 55%;
+}
+
+/* On a phone the tabs move beside the account, and the account is its
+   face alone. */
+@media (max-width: 719px) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    padding: 0 12px 0 14px;
+  }
+  .account-btn:not(.known) {
+    padding: 3px;
+  }
+  .account-label {
+    display: none;
+  }
 }
 
 /* PAGES */

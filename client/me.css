@@ -323,6 +323,10 @@
 }
 
 /* THE ACCOUNT */
+.account-votes {
+  width: 100%;
+  margin: 4px 0 18px;
+}
 .account-head {
   padding: 2px 0 14px;
   text-align: center;
