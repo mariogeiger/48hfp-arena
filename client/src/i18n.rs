@@ -120,8 +120,6 @@ pub struct Words {
     pub sign_in: &'static str,
 
     // Duels
-    pub focus_random: &'static str,
-    pub focus_title: &'static str,
     pub vote_one: &'static str,
     pub vote_many: &'static str,
     pub undo: &'static str,
@@ -132,8 +130,6 @@ pub struct Words {
     pub done_none_heading: &'static str,
     pub done_none_text: &'static str,
     pub done_none_action: &'static str,
-    pub done_focus_heading: &'static str,
-    pub done_focus_action: &'static str,
     pub done_all_heading: &'static str,
     pub done_all_text: &'static str,
     pub done_all_action: &'static str,
@@ -350,8 +346,6 @@ pub static EN: Words = Words {
     tab_me: "My votes",
     sign_in: "Sign in",
 
-    focus_random: "Random",
-    focus_title: "One {item} against all",
     vote_one: "vote",
     vote_many: "votes",
     undo: "Undo",
@@ -362,8 +356,6 @@ pub static EN: Words = Words {
     done_none_heading: "Pick your {items}",
     done_none_text: "At least two, for a duel.",
     done_none_action: "Pick",
-    done_focus_heading: "{title} has met them all",
-    done_focus_action: "Back to random duels",
     done_all_heading: "Every duel is done!",
     done_all_text: "{n} votes. Bravo!",
     done_all_action: "See the ranking",
@@ -544,8 +536,6 @@ pub static FR: Words = Words {
     tab_me: "Mes votes",
     sign_in: "Connexion",
 
-    focus_random: "Au hasard",
-    focus_title: "Un {item} contre tous",
     vote_one: "vote",
     vote_many: "votes",
     undo: "Annuler",
@@ -556,8 +546,6 @@ pub static FR: Words = Words {
     done_none_heading: "Choisis tes {items}",
     done_none_text: "Au moins deux, pour un duel.",
     done_none_action: "Choisir",
-    done_focus_heading: "{title} les a tous affront\u{00E9}s",
-    done_focus_action: "Retour au hasard",
     done_all_heading: "Tous les duels sont faits\u{00A0}!",
     done_all_text: "{n} votes. Bravo\u{00A0}!",
     done_all_action: "Voir le classement",

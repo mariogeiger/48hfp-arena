@@ -189,11 +189,7 @@ pub async fn save_selection(state: &AppState) {
 }
 
 pub async fn load_pair(state: &AppState) {
-    let focus = state.focus_film_id.get_untracked();
     let mut url = format!("/api/pair?user_id={}", state.user_id);
-    if let Some(fid) = focus {
-        url.push_str(&format!("&focus_film={}", fid));
-    }
     let avoid = state
         .passed
         .with_value(|passed| pair_list(passed.iter().map(|p| p.pair)));
@@ -210,8 +206,6 @@ pub async fn load_pair(state: &AppState) {
         let selected = state.selected_ids.get_untracked();
         let reason = if SiteConfig::get().require_selection && selected.len() < 2 {
             PairDoneReason::NotEnough
-        } else if state.focus_film_id.get_untracked().is_some() {
-            PairDoneReason::FocusDone
         } else {
             PairDoneReason::AllDone
         };

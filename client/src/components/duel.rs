@@ -8,7 +8,7 @@ use crate::components::card::CardFace;
 use crate::components::frame::SheetFrame;
 use crate::components::icons::{Icon, icon};
 use crate::i18n::{fill, t};
-use crate::state::{AppState, SiteConfig};
+use crate::state::AppState;
 use leptos::prelude::*;
 use versus_shared::{Film, Outcome};
 
@@ -48,12 +48,7 @@ pub fn DuelSheet() -> impl IntoView {
             state.duel.set(None);
             return None;
         };
-        let duel_question = SiteConfig::get().duel_question;
-        let heading = if duel_question.is_empty() {
-            fill(t().matrix_versus, &[("a", &a.title), ("b", &b.title)])
-        } else {
-            duel_question
-        };
+        let heading = fill(t().matrix_versus, &[("a", &a.title), ("b", &b.title)]);
 
         let state_vote = state.clone();
         let vote = Memo::new(move |_| own_vote(&state_vote, a_id, b_id));

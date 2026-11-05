@@ -91,10 +91,15 @@ fn is_video_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-/// The versions of an item, the first one chosen at first. A single version
-/// shows no pill: its name, if any, has nothing to tell apart.
+/// The versions of an item, the first one chosen at first, each starting at
+/// once with `autoplay`. A single version shows no pill: its name, if any,
+/// has nothing to tell apart.
 #[component]
-pub fn Versions(videos: Vec<Video>, link_label: String) -> impl IntoView {
+pub fn Versions(
+    videos: Vec<Video>,
+    link_label: String,
+    #[prop(optional)] autoplay: bool,
+) -> impl IntoView {
     let chosen = RwSignal::new(0usize);
     let pills = (videos.len() > 1).then(|| {
         view! {
@@ -115,7 +120,7 @@ pub fn Versions(videos: Vec<Video>, link_label: String) -> impl IntoView {
     });
     let player = move || {
         let url = videos.get(chosen.get())?.url.clone();
-        Some(view! { <Player url=url link_label=link_label.clone() /> })
+        Some(view! { <Player url=url link_label=link_label.clone() autoplay=autoplay /> })
     };
     view! { {pills} {player} }
 }

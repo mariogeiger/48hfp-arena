@@ -16,7 +16,6 @@ client_dist = "./client/dist"
 
 has_image      = true
 image_fallback = "https://www.48hourfilm.com/storage/posters/48HFP {City} 2025 - {Team} - Poster - file 1.jpg"
-duel_question = ""
 noun          = "film"
 noun_plural   = "films"
 welcome_text  = "Please only vote on pairs of films you have actually watched. Your honest comparisons make the ranking meaningful for everyone."

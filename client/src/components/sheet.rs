@@ -17,6 +17,8 @@ use versus_shared::{Film, Proposal};
 enum Mode {
     View,
     Edit,
+    /// The form, its video field ready for a link.
+    AddVideo,
     History,
 }
 
@@ -61,16 +63,17 @@ pub fn ItemSheet() -> impl IntoView {
                 }
                 .into_any()
             }
-            Sheet::Item(id) | Sheet::Edit(id) => {
+            Sheet::Item(id) | Sheet::Edit(id) | Sheet::AddVideo(id) => {
                 let state = state.clone();
                 // Each item opens on its view, or on its form when asked for
                 // it, and the form opened so closes the sheet when done.
-                let straight_to_form = sheet == Sheet::Edit(id);
-                let mode = RwSignal::new(if straight_to_form {
-                    Mode::Edit
-                } else {
-                    Mode::View
-                });
+                let first = match sheet {
+                    Sheet::Edit(_) => Mode::Edit,
+                    Sheet::AddVideo(_) => Mode::AddVideo,
+                    _ => Mode::View,
+                };
+                let straight_to_form = first != Mode::View;
+                let mode = RwSignal::new(first);
                 let form_done = {
                     let state = state.clone();
                     Callback::new(move |_| {
@@ -94,8 +97,12 @@ pub fn ItemSheet() -> impl IntoView {
                         (None, _) => {
                             view! { <p class="sheet-hint">{t().error_unknown_film}</p> }.into_any()
                         }
-                        (Some((film, _)), Mode::Edit) => view! {
-                            <ItemForm film=Some(film) on_done=form_done />
+                        (Some((film, _)), Mode::Edit | Mode::AddVideo) => view! {
+                            <ItemForm
+                                film=Some(film)
+                                on_done=form_done
+                                focus_video=mode_now == Mode::AddVideo
+                            />
                         }
                         .into_any(),
                         (Some((film, _)), Mode::History) => view! {
@@ -204,7 +211,7 @@ fn ItemView(film: Film, proposal: Option<Proposal>, mode: RwSignal<Mode>) -> imp
         </div>
         {(!film.synopsis.is_empty()).then(|| view! { <p class="item-synopsis">{film.synopsis.clone()}</p> })}
         {if misses_video(&film) {
-            view! { <MissingVideo on_add=Callback::new(move |_| mode.set(Mode::Edit)) /> }.into_any()
+            view! { <MissingVideo on_add=Callback::new(move |_| mode.set(Mode::AddVideo)) /> }.into_any()
         } else {
             view! { <Versions videos=film.videos.clone() link_label=link_label /> }.into_any()
         }}

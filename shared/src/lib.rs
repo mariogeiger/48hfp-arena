@@ -289,7 +289,6 @@ impl TryFrom<KeptOutcome> for Outcome {
 #[derive(Deserialize)]
 pub struct PairRequest {
     pub user_id: String,
-    pub focus_film: Option<usize>,
     /// The pairs the viewer passed on lately, oldest first, as `pair_list`
     /// writes them: drawn only when no other pair is left.
     #[serde(default)]

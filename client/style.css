@@ -24,6 +24,8 @@
   /* Accents */
   --accent: var(--gold);
   --accent-bg: #f5b43624;
+  /* What a tap votes for, lit under the pointer. */
+  --vote-bg: #f5b43659;
   --accent-border: #f5b43670;
   --danger: #e03131;
 

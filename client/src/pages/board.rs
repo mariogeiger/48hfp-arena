@@ -116,6 +116,7 @@ fn board_html(
                     <span class="podium-title">{title}</span>
                     {missing}
                     <span class="board-score">{score}</span>
+                    <span class="board-record">{record}</span>
                     <span class="podium-step"></span>
                 </button>"#,
                 id = film.id,
@@ -123,6 +124,7 @@ fn board_html(
                 title = html_escape(&film.title),
                 missing = missing_html(film),
                 score = item.rating.round() as i64,
+                record = record(item.wins, item.ties, item.losses),
             ));
         }
         html.push_str("</div>");

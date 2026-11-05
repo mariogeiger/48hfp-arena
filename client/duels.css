@@ -1,6 +1,6 @@
-/* The duels: the chips and the tally above, the two cards and their VS,
-   each poster playing its video and bearing its actions, the bar of undo,
-   tie and skip below, and what shows once no duel is left. */
+/* The duels: the tally and the selection above, the two cards and their
+   VS, each item over its actions, the bar of undo, tie and skip below, and
+   what shows once no duel is left. The duel a cell opens shares the cards. */
 
 body.duels-active {
   overflow: hidden;
@@ -21,11 +21,10 @@ body.duels-active {
   padding: 10px 14px 8px;
   gap: 8px;
 }
-.duels-tools {
+.duels-top {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
 }
 .duels-stage {
   flex: 1;
@@ -34,15 +33,6 @@ body.duels-active {
   flex-direction: column;
   justify-content: center;
   gap: 10px;
-}
-.duel-question {
-  padding: 0 12px;
-  text-align: center;
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1.2;
-  color: var(--text-muted);
-  animation: pop-in 0.4s var(--spring);
 }
 
 .arena {
@@ -87,15 +77,36 @@ body.duels-active {
     transform: translateY(30px) scale(0.9) rotate(calc(var(--tilt) * 3));
   }
 }
+/* On the duels, a card is the item, which a tap votes for, over its
+   actions, which never vote. Under the pointer it stays still, so that its
+   buttons stay where they are aimed at, and only what votes lights up. */
+.duels .duel-card {
+  padding: 0;
+  cursor: default;
+}
+.card-vote {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 8px 10px;
+  border-radius: 24px 24px 0 0;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.card-vote:only-child {
+  border-radius: 24px;
+}
 @media (hover: hover) {
-  .duel-card:hover {
-    transform: translateY(-5px) rotate(var(--tilt));
-    box-shadow:
-      0 0 0 3px var(--accent-border),
-      var(--shadow);
+  .card-vote:hover,
+  .duel-sheet .duel-card:hover {
+    background: var(--vote-bg);
   }
 }
-.duel-card:active {
+.card-vote:active,
+.duel-sheet .duel-card:active {
+  background: var(--vote-bg);
+}
+.duel-card:has(> .card-vote:active) {
   transform: scale(0.97);
 }
 .duel-card.won {
@@ -209,145 +220,83 @@ body.duels-active {
   line-height: 1.4;
   white-space: normal;
 }
-/* Over the poster: the pill that plays its video or asks for it, and the
-   video playing in the poster's place. */
-.art-pills {
-  position: absolute;
-  inset: auto 0 10px;
+/* Under the item, its actions: its video, which the ranking's badge asks
+   for when it is missing, its form, and taking it out of the selection. */
+.card-actions {
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 0 8px;
-  pointer-events: none;
+  gap: 6px;
+  padding: 7px;
+  border-top: 1.5px solid var(--border);
 }
-.art-pill {
-  pointer-events: auto;
-  max-width: 100%;
+.card-watch,
+.card-act {
+  flex-shrink: 0;
+  min-height: 32px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 7px 12px;
+  justify-content: center;
   border-radius: 999px;
-  background: rgb(255 255 255 / 92%);
+  background: var(--card-alt);
   color: var(--purple);
-  font-size: 12.5px;
-  font-weight: 850;
-  text-decoration: none;
-  box-shadow: 0 4px 14px rgb(29 16 41 / 25%);
-  transition: transform 0.15s var(--spring);
-}
-.art-pill span {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.art-pill .icon {
-  flex-shrink: 0;
-  width: 13px;
-  height: 13px;
-}
-@media (max-width: 400px) {
-  .art-pill {
-    padding: 7px 10px;
-  }
-  .art-missing .icon {
-    display: none;
-  }
-}
-.art-pill:not(.art-missing) .icon {
-  fill: currentColor;
-}
-.art-missing {
-  background: rgb(29 16 41 / 62%);
-  color: #fff;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-}
-@media (hover: hover) {
-  .art-pill:hover {
-    transform: scale(1.05);
-  }
-}
-.art-player {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  background: #000;
-  cursor: auto;
-}
-.art-player .video-frame {
-  width: 100%;
-  margin: 0;
-  border-radius: 0;
-}
-.art-player .video-file {
-  width: 100%;
-  max-height: 100%;
-  margin: 0;
-  border-radius: 0;
-}
-.art-close {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 85%);
-  color: var(--text-strong);
-}
-.art-close .icon {
-  width: 15px;
-  height: 15px;
-}
-/* A text card's pill sits under its words. */
-.card-text-only .art-pills {
-  position: static;
-  margin-top: 14px;
-}
-/* The card's actions, in the corners of its poster. */
-.card-corner {
-  position: absolute;
-  top: 14px;
-  z-index: 2;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: rgb(29 16 41 / 45%);
-  color: #fff;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   transition:
-    transform 0.15s var(--spring),
+    box-shadow 0.15s ease,
     background 0.15s ease;
 }
-.corner-start {
-  left: 14px;
+.card-watch {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  font-weight: 850;
+  line-height: 1.1;
+  text-align: center;
+  text-decoration: none;
 }
-.corner-end {
-  right: 14px;
+.card-watch .icon {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
 }
-.card-corner .icon {
+.card-missing {
+  background: var(--accent-bg);
+  color: #8a5a00;
+}
+.card-act {
+  width: 32px;
+  color: var(--text-muted);
+}
+.card-act .icon {
   width: 16px;
   height: 16px;
 }
 @media (hover: hover) {
-  .card-corner:hover {
-    transform: scale(1.1);
-    background: rgb(29 16 41 / 70%);
+  .card-watch:hover,
+  .card-act:hover {
+    box-shadow: 0 0 0 2px var(--accent);
+    color: var(--text-strong);
   }
 }
-.duel-card:has(.card-text-only) .card-corner {
-  background: var(--card-alt);
-  color: var(--text-muted);
+.card-watch:active,
+.card-act:active {
+  background: var(--vote-bg);
 }
-.duel-card.playing .card-corner {
-  display: none;
+@media (max-width: 400px) {
+  .card-actions {
+    gap: 4px;
+    padding: 6px;
+  }
+  .card-watch {
+    padding: 4px 8px;
+    font-size: 11.5px;
+  }
+  .card-act {
+    width: 30px;
+    min-height: 30px;
+  }
 }
 .vs {
   position: absolute;
@@ -408,26 +357,6 @@ body.duels-active {
   width: 17px;
   height: 17px;
 }
-.skip-btn {
-  min-width: 50px;
-  height: 50px;
-  flex-shrink: 0;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: var(--card);
-  color: var(--text-muted);
-  font-size: 14px;
-  font-weight: 800;
-  box-shadow: var(--shadow-s);
-}
-@media (hover: hover) {
-  .skip-btn:hover {
-    color: var(--text-strong);
-  }
-}
-.skip-btn:active {
-  transform: scale(0.95);
-}
 .arena-loading .ghost {
   min-height: 320px;
   background: linear-gradient(100deg, var(--card) 40%, var(--card-alt) 50%, var(--card) 60%) 0 0 / 200% 100%;
@@ -441,30 +370,77 @@ body.duels-active {
   }
 }
 
+/* Undo, tie and skip, one pill of three. */
 .duels-bar {
+  align-self: center;
   display: flex;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--shadow-s);
+  overflow: hidden;
+}
+.duels-bar button {
+  height: 48px;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 7px;
+  padding: 0 18px;
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 800;
+  transition: background 0.15s ease;
 }
-.duels-bar.idle .tie-btn,
-.duels-bar.idle .skip-btn {
-  visibility: hidden;
+.duels-bar button + button {
+  border-left: 1.5px solid var(--border);
 }
-/* How far the viewer is: a thin bar, and the votes cast. */
+.duels-bar .icon {
+  width: 18px;
+  height: 18px;
+}
+@media (hover: hover) {
+  .duels-bar button:hover:not(:disabled) {
+    background: var(--card-alt);
+    color: var(--text-strong);
+  }
+}
+.duels-bar button:active:not(:disabled) {
+  background: var(--vote-bg);
+}
+.duels-bar button:disabled {
+  color: var(--border);
+}
+/* With no duel left, only undo stays. */
+.duels-bar.idle .duels-tie,
+.duels-bar.idle .duels-skip {
+  display: none;
+}
+/* How far the viewer is, the votes cast written over. */
 .tally {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 4px;
-}
-.tally .tally-bar {
+  position: relative;
   flex: 1;
-  height: 5px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--shadow-s);
+  overflow: hidden;
+}
+.tally i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--purple) 30%, transparent),
+    color-mix(in srgb, var(--pink) 32%, transparent),
+    color-mix(in srgb, var(--gold) 42%, transparent)
+  );
+  transition: width 0.6s var(--ease-out);
 }
 .tally-count {
-  flex-shrink: 0;
-  font-size: 12.5px;
+  position: relative;
+  font-size: 13.5px;
   font-weight: 750;
   color: var(--text-muted);
 }

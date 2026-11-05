@@ -132,9 +132,6 @@ pub struct SiteConfig {
     pub lang: Lang,
 
     // ---- user-facing copy (served to the client via /api/config) ----
-    /// Question shown above each duel, e.g. "Which matters most?".
-    #[serde(default)]
-    pub duel_question: String,
     /// Singular noun for an item, e.g. "film" / "principle".
     #[serde(default = "default_noun")]
     pub noun: String,
@@ -230,7 +227,6 @@ impl SiteConfig {
             "require_selection": self.require_selection,
             "start_page": self.start_page,
             "select_by_default": self.select_by_default,
-            "duel_question": self.duel_question,
             "noun": self.noun,
             "noun_plural": self.noun_plural,
             "welcome_text": self.welcome_text,

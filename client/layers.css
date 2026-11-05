@@ -154,6 +154,76 @@
   font-size: 13px;
 }
 
+/* SCREENING: a video large over everything */
+.screening {
+  position: fixed;
+  inset: 0;
+  z-index: 9200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(12 6 18 / 88%);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fade-in 0.2s ease;
+}
+.screening-stage {
+  /* As wide as it may be while its 16:9 player and head fit the height. */
+  width: min(100%, calc((100dvh - 150px) * 16 / 9));
+  animation: pop-in 0.3s var(--spring);
+}
+.screening-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.screening-head h2 {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 850;
+  color: #fff;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.screening-close {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 16%);
+  color: #fff;
+  transition: transform 0.2s var(--spring);
+}
+@media (hover: hover) {
+  .screening-close:hover {
+    transform: rotate(90deg);
+    background: rgb(255 255 255 / 26%);
+  }
+}
+.screening .video-frame,
+.screening .video-file {
+  margin-top: 0;
+  border-radius: 14px;
+}
+.screening .video-file {
+  max-height: calc(100dvh - 150px);
+}
+.screening .version-pill:not(.version-on) {
+  border-color: rgb(255 255 255 / 30%);
+  background: transparent;
+  color: #fff;
+}
+.screening .video-link {
+  margin-top: 0;
+  color: var(--gold);
+}
+
 /* TOASTS */
 .vote-toast-container {
   position: fixed;

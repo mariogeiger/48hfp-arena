@@ -133,9 +133,14 @@ fn versions_of(rows: &[VersionRow]) -> Vec<Video> {
 }
 
 /// Edits `film`, or proposes a new item when it is `None`. `on_done` gets the
-/// item's id once saved, or `None` when cancelled.
+/// item's id once saved, or `None` when cancelled. With `focus_video`, the
+/// first version's link awaits one, in view.
 #[component]
-pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl IntoView {
+pub fn ItemForm(
+    film: Option<Film>,
+    on_done: Callback<Option<usize>>,
+    #[prop(optional)] focus_video: bool,
+) -> impl IntoView {
     let state = use_context::<AppState>().unwrap();
     let cfg = SiteConfig::get();
     let names = cfg.fields.clone();
@@ -226,8 +231,20 @@ pub fn ItemForm(film: Option<Film>, on_done: Callback<Option<usize>>) -> impl In
             .map(|label| view! { <TextField label=label value=value url=url /> })
     };
 
+    let form = NodeRef::<leptos::html::Form>::new();
+    if focus_video {
+        form.on_load(|form| {
+            if let Ok(Some(link)) = form.query_selector(".version-url")
+                && let Ok(link) = link.dyn_into::<web_sys::HtmlElement>()
+            {
+                link.scroll_into_view_with_bool(false);
+                let _ = link.focus();
+            }
+        });
+    }
+
     view! {
-        <form class="item-form" on:submit=submit>
+        <form class="item-form" node_ref=form on:submit=submit>
             {text(&names.title, t().field_title, title, false)}
             {text(&names.team, t().field_team, team, false)}
             {text(&names.city, t().field_city, city, false)}

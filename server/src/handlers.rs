@@ -100,14 +100,11 @@ pub async fn get_pair(data: web::Data<AppState>, query: web::Query<PairRequest>)
             return HttpResponse::Ok().json(serde_json::json!({"done": true, "votes": votes}));
         }
 
-        let focus = query.focus_film.filter(|f| seen.contains(f));
         let mut remaining = Vec::new();
         for i in 0..seen.len() {
             for j in (i + 1)..seen.len() {
                 let pair = canonical_pair(seen[i], seen[j]);
-                if !user.compared_pairs.contains(&pair)
-                    && (focus.is_none() || pair.0 == focus.unwrap() || pair.1 == focus.unwrap())
-                {
+                if !user.compared_pairs.contains(&pair) {
                     remaining.push(pair);
                 }
             }

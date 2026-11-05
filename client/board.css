@@ -198,6 +198,10 @@
   align-self: center;
   margin-top: 0;
 }
+.podium-spot .board-record {
+  margin-top: -4px;
+  white-space: nowrap;
+}
 .board-stats {
   flex-shrink: 0;
   display: flex;

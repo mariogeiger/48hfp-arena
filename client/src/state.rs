@@ -21,8 +21,6 @@ pub struct SiteConfig {
     pub require_selection: bool,
     #[serde(default)]
     pub start_page: String,
-    #[serde(default)]
-    pub duel_question: String,
     #[serde(default = "default_noun")]
     pub noun: String,
     #[serde(default = "default_noun_plural")]
@@ -95,7 +93,6 @@ impl Default for SiteConfig {
             has_image: true,
             require_selection: true,
             start_page: String::new(),
-            duel_question: String::new(),
             noun: default_noun(),
             noun_plural: default_noun_plural(),
             welcome_text: String::new(),
@@ -169,8 +166,6 @@ pub enum Panel {
     Account,
     /// The items the viewer knows.
     Selection,
-    /// The item every duel features, or none.
-    Focus,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -198,7 +193,6 @@ pub struct VoteRecord {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PairDoneReason {
     NotEnough,
-    FocusDone,
     AllDone,
 }
 
@@ -384,7 +378,6 @@ pub struct AppState {
     pub vote_history: RwSignal<Vec<VoteRecord>>,
     /// The pairs passed on lately, oldest first.
     pub passed: StoredValue<Vec<PassedPair>>,
-    pub focus_film_id: RwSignal<Option<usize>>,
 
     pub board: RwSignal<Vec<LeaderboardEntry>>,
     pub stats: RwSignal<Option<Stats>>,
@@ -405,6 +398,8 @@ pub struct AppState {
     pub duel: RwSignal<Option<(usize, usize)>>,
     /// The panel open over the page, if any.
     pub panel: RwSignal<Option<Panel>>,
+    /// The item whose video plays large over everything, if any.
+    pub screening: RwSignal<Option<usize>>,
 
     /// The private name of this identity, once known.
     pub user_name: RwSignal<Option<String>>,
@@ -433,6 +428,8 @@ pub struct Handoff {
 pub enum Sheet {
     Item(usize),
     Edit(usize),
+    /// The edit form, its video field ready for a link.
+    AddVideo(usize),
     New,
 }
 
@@ -440,7 +437,7 @@ impl Sheet {
     /// The item shown, if any.
     pub fn item(self) -> Option<usize> {
         match self {
-            Sheet::Item(id) | Sheet::Edit(id) => Some(id),
+            Sheet::Item(id) | Sheet::Edit(id) | Sheet::AddVideo(id) => Some(id),
             Sheet::New => None,
         }
     }
@@ -471,7 +468,6 @@ impl AppState {
             pairs_left: RwSignal::new(None),
             vote_history: RwSignal::new(Vec::new()),
             passed: StoredValue::new(Vec::new()),
-            focus_film_id: RwSignal::new(None),
 
             board: RwSignal::new(Vec::new()),
             stats: RwSignal::new(None),
@@ -487,6 +483,7 @@ impl AppState {
             sheet: RwSignal::new(None),
             duel: RwSignal::new(None),
             panel: RwSignal::new(None),
+            screening: RwSignal::new(None),
 
             user_name: RwSignal::new(None),
             google: RwSignal::new(None),

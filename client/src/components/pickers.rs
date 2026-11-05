@@ -1,5 +1,5 @@
-//! The two lists the duels open: the items the viewer knows, which the
-//! duels draw from, and the item every duel features, if any.
+//! The list the duels open: the items the viewer knows, which the duels draw
+//! from.
 
 use crate::api;
 use crate::components::card::meta;
@@ -170,97 +170,6 @@ fn Selection(state: AppState) -> impl IntoView {
                         }
                     }}
                 </button>
-            </div>
-        </SheetFrame>
-    }
-}
-
-#[component]
-pub fn FocusSheet() -> impl IntoView {
-    let state = use_context::<AppState>().unwrap();
-    move || {
-        (state.panel.get() == Some(Panel::Focus)).then(|| {
-            let state = state.clone();
-            view! { <Focus state=state /> }
-        })
-    }
-}
-
-#[component]
-fn Focus(state: AppState) -> impl IntoView {
-    let query = RwSignal::new(String::new());
-    let selects = SiteConfig::get().require_selection;
-    // The items the duels draw from.
-    let visible = {
-        let state = state.clone();
-        Memo::new(move |_| {
-            let q = query.get().to_lowercase();
-            let selected = state.selected_ids.get();
-            state.films.with(|films| {
-                films
-                    .iter()
-                    .filter(|f| !selects || selected.contains(&f.id))
-                    .filter(|f| matches(f, &q))
-                    .cloned()
-                    .collect::<Vec<_>>()
-            })
-        })
-    };
-    let focus = state.focus_film_id;
-    let choose = {
-        let state = state.clone();
-        move |id: Option<usize>| {
-            focus.set(id);
-            state.panel.set(None);
-            let s = state.clone();
-            wasm_bindgen_futures::spawn_local(async move { api::load_pair(&s).await });
-        }
-    };
-    let choose_random = choose.clone();
-    let state_close = state.clone();
-    let close = Callback::new(move |_| state_close.panel.set(None));
-
-    view! {
-        <SheetFrame on_close=close class="list-sheet">
-            <h2>{say(t().focus_title, &[])}</h2>
-            <div class="list-tools">
-                <SearchBox query=query />
-            </div>
-            <div class="pick-list">
-                <button
-                    class="pick-row"
-                    class:on=move || focus.get().is_none()
-                    on:click=move |_| choose_random(None)
-                >
-                    <span class="pick-icon">{icon(Icon::Shuffle)}</span>
-                    <span class="pick-text">
-                        <span class="pick-title">{t().focus_random}</span>
-                    </span>
-                </button>
-                {move || {
-                    let choose = choose.clone();
-                    visible
-                        .get()
-                        .into_iter()
-                        .map(|film| {
-                            let id = film.id;
-                            let choose = choose.clone();
-                            view! {
-                                <button
-                                    class="pick-row"
-                                    class:on=move || focus.get() == Some(id)
-                                    on:click=move |_| choose(Some(id))
-                                >
-                                    {thumb(&film)}
-                                    <span class="pick-text">
-                                        <span class="pick-title">{film.title.clone()}</span>
-                                        <span class="pick-meta">{meta(&film)}</span>
-                                    </span>
-                                </button>
-                            }
-                        })
-                        .collect_view()
-                }}
             </div>
         </SheetFrame>
     }

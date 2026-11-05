@@ -162,8 +162,8 @@ fn App() -> impl IntoView {
         <components::sheet::ItemSheet />
         <components::duel::DuelSheet />
         <components::pickers::SelectionSheet />
-        <components::pickers::FocusSheet />
         <components::account::AccountSheet />
+        <components::screening::Screening />
         <components::toast::ToastContainer />
 
         <components::overlays::WelcomeOverlay />
@@ -180,7 +180,9 @@ fn close_on_escape(state: &AppState) {
             if ev.key() != "Escape" {
                 return;
             }
-            if state.duel.get_untracked().is_some() {
+            if state.screening.get_untracked().is_some() {
+                state.screening.set(None);
+            } else if state.duel.get_untracked().is_some() {
                 state.duel.set(None);
             } else if state.panel.get_untracked().is_some() {
                 state.panel.set(None);
@@ -195,11 +197,14 @@ fn close_on_escape(state: &AppState) {
     on_key.forget();
 }
 
-/// The page stays still under an open sheet.
+/// The page stays still under an open sheet or a video playing large.
 fn hold_page_under_sheets(state: &AppState) {
-    let (sheet, duel, panel) = (state.sheet, state.duel, state.panel);
+    let (sheet, duel, panel, screening) = (state.sheet, state.duel, state.panel, state.screening);
     Effect::new(move || {
-        let covered = sheet.get().is_some() || duel.get().is_some() || panel.get().is_some();
+        let covered = sheet.get().is_some()
+            || duel.get().is_some()
+            || panel.get().is_some()
+            || screening.get().is_some();
         if let Some(body) = web_sys::window()
             .and_then(|w| w.document())
             .and_then(|d| d.body())
