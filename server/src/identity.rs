@@ -48,12 +48,12 @@ pub async fn set_name(data: web::Data<AppState>, payload: web::Json<NamePayload>
 }
 
 /// Fold the identity `user_id` into `into`, which a link offered. Answers
-/// with the selection of the merged identity.
+/// with the merged identity.
 pub async fn merge(data: web::Data<AppState>, payload: web::Json<MergePayload>) -> HttpResponse {
     if data.is_banned(&payload.user_id) || data.is_banned(&payload.into) {
         return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
     }
-    let selection = {
+    {
         // Lock order: bt_ratings -> users.
         let mut ratings = data.bt_ratings.lock().unwrap();
         let mut users = data.users.lock().unwrap();
@@ -63,19 +63,18 @@ pub async fn merge(data: web::Data<AppState>, payload: web::Json<MergePayload>) 
         absorb(&mut users, &payload.user_id, &payload.into);
         let banned = data.banned.lock().unwrap();
         AppState::recompute_ratings(&mut ratings, &users, &banned);
-        users[&payload.into].seen_films.clone()
-    };
+    }
     // A pair both identities compared now counts once.
     data.sync_vote_floor();
     data.save();
-    HttpResponse::Ok().json(serde_json::json!({"selection": selection}))
+    HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
 }
 
 /// Sign in with the Google account an ID token names. The identity that
 /// account already signs in as is the one to continue, and this device's
 /// identity folds into it unless another account holds it; an account seen
 /// for the first time takes this device's identity, or a new one if another
-/// account holds it. Answers with the identity to continue and its selection.
+/// account holds it. Answers with the identity to continue.
 pub async fn sign_in_with_google(
     data: web::Data<AppState>,
     google: web::Data<Google>,
@@ -91,7 +90,7 @@ pub async fn sign_in_with_google(
             return HttpResponse::Unauthorized().json(serde_json::json!({"error": code}));
         }
     };
-    let (user_id, selection) = {
+    let user_id = {
         // Lock order: bt_ratings -> users.
         let mut ratings = data.bt_ratings.lock().unwrap();
         let mut users = data.users.lock().unwrap();
@@ -126,14 +125,13 @@ pub async fn sign_in_with_google(
         }
         // The e-mail, name and picture may have changed since.
         user.google = Some(account);
-        let selection = user.seen_films.clone();
         let banned = data.banned.lock().unwrap();
         AppState::recompute_ratings(&mut ratings, &users, &banned);
-        (user_id, selection)
+        user_id
     };
     data.sync_vote_floor();
     data.save();
-    HttpResponse::Ok().json(serde_json::json!({"user_id": user_id, "selection": selection}))
+    HttpResponse::Ok().json(serde_json::json!({"user_id": user_id}))
 }
 
 /// Fold the identity `from` into `into`, which it becomes, and forget it.
@@ -162,11 +160,7 @@ fn fold(into: &mut UserState, from: UserState) {
             into.votes.insert(key, theirs);
         }
     }
-    for id in from.seen_films {
-        if !into.seen_films.contains(&id) {
-            into.seen_films.push(id);
-        }
-    }
+    into.join_selection(from.seen_films, from.skipped_films);
     if into.name.is_none() {
         into.name = from.name;
     }

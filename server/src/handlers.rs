@@ -44,24 +44,37 @@ pub async fn set_selection(
     if data.is_banned(&payload.user_id) {
         return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
     }
+    let films = data.films();
     {
         let mut users = data.users.lock().unwrap();
         let user = users.entry(payload.user_id.clone()).or_default();
-        user.seen_films = payload.film_ids.clone();
+        user.select(payload.film_ids.clone(), &films, data.select_by_default);
     }
     data.save();
     HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
+}
+
+/// The items the user compares, which the client shows ticked.
+pub async fn get_selection(
+    data: web::Data<AppState>,
+    query: web::Query<UserQuery>,
+) -> HttpResponse {
+    if data.is_banned(&query.user_id) {
+        return HttpResponse::Forbidden().json(serde_json::json!({"error": "banned"}));
+    }
+    let films = data.films();
+    let users = data.users.lock().unwrap();
+    let newcomer = UserState::default();
+    let user = users.get(&query.user_id).unwrap_or(&newcomer);
+    let film_ids = user.selection(&films, data.select_by_default);
+    HttpResponse::Ok().json(serde_json::json!({"film_ids": film_ids}))
 }
 
 /// The items a user compares: every item when the site has no selection
 /// step, else the user's own picks, as far as they are published.
 fn in_play(data: &AppState, user: &UserState, films: &HashMap<usize, Film>) -> Vec<usize> {
     if data.require_selection {
-        user.seen_films
-            .iter()
-            .copied()
-            .filter(|id| films.contains_key(id))
-            .collect()
+        user.selection(films, data.select_by_default)
     } else {
         let mut all: Vec<usize> = films.keys().copied().collect();
         all.sort_unstable();

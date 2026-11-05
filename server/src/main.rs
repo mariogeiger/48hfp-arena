@@ -111,6 +111,7 @@ async fn main() -> std::io::Result<()> {
                 "/api/identity/google",
                 web::post().to(identity::sign_in_with_google),
             )
+            .route("/api/selection", web::get().to(handlers::get_selection))
             .route("/api/selection", web::post().to(handlers::set_selection))
             .route("/api/pair", web::get().to(handlers::get_pair))
             .route("/api/vote", web::post().to(handlers::vote))

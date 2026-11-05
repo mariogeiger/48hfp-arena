@@ -127,14 +127,10 @@ pub async fn boot(state: &AppState) {
             state.board.set(board);
         }
         state.films.set(films);
-        state.restore_selection();
     }
 
     let cfg = SiteConfig::get();
-    // The server draws pairs from the selection it was last sent.
-    if cfg.require_selection && state.selected_ids.get_untracked().len() >= 2 {
-        save_selection(state).await;
-    }
+    load_selection(state).await;
 
     let hash = web_sys::window()
         .unwrap()
@@ -165,8 +161,21 @@ pub async fn boot(state: &AppState) {
     }
 }
 
+/// Take the items the server keeps for the viewer as their selection.
+pub async fn load_selection(state: &AppState) {
+    if !SiteConfig::get().require_selection {
+        return;
+    }
+    let url = format!("/api/selection?user_id={}", state.user_id);
+    if let Ok(data) = api_get(&url).await
+        && let Ok(ids) = serde_json::from_value::<Vec<usize>>(data["film_ids"].clone())
+    {
+        state.selected_ids.set(ids.into_iter().collect());
+    }
+}
+
+/// Tell the server which items the viewer compares; it keeps them for them.
 pub async fn save_selection(state: &AppState) {
-    state.store_selection();
     let ids: Vec<usize> = state.selected_ids.get_untracked().into_iter().collect();
 
     let _ = api_post(
@@ -323,7 +332,8 @@ pub async fn reload_films(state: &AppState) {
             .collect();
         films.sort_by_key(|f| (rank_by_id.get(&f.id).copied().unwrap_or(usize::MAX), f.id));
         state.films.set(films);
-        state.restore_selection();
+        // Items added to the catalog may join the selection.
+        load_selection(state).await;
     }
 }
 

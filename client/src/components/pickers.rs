@@ -59,9 +59,9 @@ pub fn SelectionSheet() -> impl IntoView {
 #[component]
 fn Selection(state: AppState) -> impl IntoView {
     let query = RwSignal::new(String::new());
-    // Each tap is kept at once, so that a reload keeps it. The server, which
-    // draws the pairs, hears of the change when the sheet closes, however it
-    // closes, and only then is the next pair drawn.
+    // Each tap is kept by the server at once, so that a reload keeps it. The
+    // next pair is drawn when the sheet closes, however it closes, with the
+    // last selection sent again in case the taps arrived out of order.
     let picked_before = state.selected_ids.get_untracked();
     {
         let state = state.clone();
@@ -76,7 +76,10 @@ fn Selection(state: AppState) -> impl IntoView {
     }
     let save = {
         let state = state.clone();
-        move || state.store_selection()
+        move || {
+            let state = state.clone();
+            wasm_bindgen_futures::spawn_local(async move { api::save_selection(&state).await });
+        }
     };
     let visible = {
         let state = state.clone();

@@ -6,7 +6,7 @@
 
 use crate::api::{get, post};
 use crate::i18n::t;
-use crate::state::{AppState, GoogleProfile, Handoff, SiteConfig, USER_ID_KEY};
+use crate::state::{AppState, GoogleProfile, Handoff, USER_ID_KEY};
 use leptos::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
@@ -122,8 +122,8 @@ pub async fn offer_handoff(state: &AppState, other: &str) {
 /// Fold this identity into the one offered and become it.
 pub async fn accept_handoff(state: &AppState, handoff: &Handoff) -> Result<(), String> {
     let body = serde_json::json!({ "user_id": state.user_id, "into": handoff.user_id });
-    let answer = post("/api/identity/merge", body).await?;
-    become_identity(state, &handoff.user_id, &answer["selection"])
+    post("/api/identity/merge", body).await?;
+    become_identity(&handoff.user_id)
 }
 
 /// Sign in with the Google account an ID token names: the server answers
@@ -136,7 +136,7 @@ pub async fn sign_in_with_google(state: &AppState, credential: &str) -> Result<(
         load_identity(state).await;
         Ok(())
     } else {
-        become_identity(state, user_id, &answer["selection"])
+        become_identity(user_id)
     }
 }
 
@@ -149,17 +149,8 @@ pub fn sign_out() {
     let _ = window.location().reload();
 }
 
-/// Become the identity `user_id`, with its `selection`: the page reloads as it.
-fn become_identity(
-    state: &AppState,
-    user_id: &str,
-    selection: &serde_json::Value,
-) -> Result<(), String> {
-    let selection: Vec<usize> = serde_json::from_value(selection.clone()).unwrap_or_default();
-    if SiteConfig::get().require_selection && !selection.is_empty() {
-        state.selected_ids.set(selection.into_iter().collect());
-        state.store_selection();
-    }
+/// Become the identity `user_id`: the page reloads as it, with its selection.
+fn become_identity(user_id: &str) -> Result<(), String> {
     let window = web_sys::window().unwrap();
     let storage = window.local_storage().unwrap().unwrap();
     storage

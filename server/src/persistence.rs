@@ -56,6 +56,8 @@ pub struct AppState {
     pub banned: Mutex<HashSet<String>>,
     /// When false, every item is in play for everyone (no per-user selection).
     pub require_selection: bool,
+    /// Whether every item starts in a user's selection (see SiteConfig).
+    pub select_by_default: bool,
     /// Leaderboard eligibility thresholds (see SiteConfig).
     pub min_votes: u32,
     pub min_voters: usize,
@@ -67,13 +69,24 @@ impl AppState {
     pub fn new(
         catalog: Catalog,
         ratings: HashMap<usize, BtRating>,
-        users: HashMap<String, UserState>,
+        mut users: HashMap<String, UserState>,
         live_tx: broadcast::Sender<LiveEvent>,
         votes_on_disk: usize,
         cfg: &SiteConfig,
     ) -> Self {
+        let published = catalog.published();
+        // Before items were picked by default, a user's picks were kept as
+        // the items they selected: what they left out stays out.
+        if cfg.select_by_default {
+            for user in users.values_mut() {
+                if user.skipped_films.is_none() && !user.seen_films.is_empty() {
+                    let picks = std::mem::take(&mut user.seen_films);
+                    user.select(picks, &published, true);
+                }
+            }
+        }
         Self {
-            films: RwLock::new(Arc::new(catalog.published())),
+            films: RwLock::new(Arc::new(published)),
             catalog: Mutex::new(catalog),
             throttle: Throttle::default(),
             editable: cfg.editable,
@@ -84,6 +97,7 @@ impl AppState {
             votes_on_disk: AtomicUsize::new(votes_on_disk),
             banned: Mutex::new(HashSet::new()),
             require_selection: cfg.require_selection,
+            select_by_default: cfg.select_by_default,
             min_votes: cfg.min_votes,
             min_voters: cfg.min_voters,
             lang: cfg.lang,
