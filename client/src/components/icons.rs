@@ -11,6 +11,7 @@ pub enum Icon {
     User,
     Undo,
     Equal,
+    SkipForward,
     Dices,
     EyeOff,
     ListCheck,
@@ -49,6 +50,9 @@ impl Icon {
             Icon::Undo => r#"<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>"#,
             Icon::Equal => {
                 r#"<line x1="5" x2="19" y1="9" y2="9"/><line x1="5" x2="19" y1="15" y2="15"/>"#
+            }
+            Icon::SkipForward => {
+                r#"<polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/>"#
             }
             Icon::Dices => {
                 r#"<rect width="12" height="12" x="2" y="10" rx="2" ry="2"/><path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6"/><path d="M6 18h.01"/><path d="M10 14h.01"/><path d="M15 6h.01"/><path d="M18 9h.01"/>"#

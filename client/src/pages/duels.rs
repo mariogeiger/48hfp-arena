@@ -310,7 +310,10 @@ pub fn DuelsPage() -> impl IntoView {
                     {icon(Icon::Equal)}
                     <span>{t().tie}</span>
                 </button>
-                <button class="duels-skip" on:click=move |_| skip.skip()>{t().skip}</button>
+                <button class="duels-skip" on:click=move |_| skip.skip()>
+                    {icon(Icon::SkipForward)}
+                    <span>{t().skip}</span>
+                </button>
             </div>
         </div>
     }
@@ -544,6 +547,7 @@ fn SelectionChip() -> impl IntoView {
     let panel = state.panel;
     view! {
         <button class="chip" on:click=move |_| panel.set(Some(Panel::Selection))>
+            {icon(Icon::ListCheck)}
             <span>{move || say(t().selection_chip, &[("n", &count())])}</span>
             {icon(Icon::ChevronDown)}
         </button>
