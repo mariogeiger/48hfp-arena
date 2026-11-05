@@ -1,6 +1,7 @@
 //! The form that edits an item, or proposes a new one: one input per field
 //! the site has, for the poster an image to upload or a link, and for the
-//! video one row per version, in order.
+//! video one row per version, in order, and while none has a link, a way to
+//! put the video online.
 
 use crate::components::poster::Poster;
 use crate::i18n::{say, t};
@@ -66,6 +67,10 @@ impl VersionRow {
     }
 }
 
+/// Where a video without a link can be put online: YouCraft, whose links
+/// play in place (`crate::components::video`).
+const VIDEO_HOST_UPLOAD: &str = "https://youcraft.tube/upload";
+
 /// The versions in order, each a name and a link that may move up or go.
 #[component]
 fn VersionsField(label: String, rows: RwSignal<Vec<VersionRow>>) -> impl IntoView {
@@ -112,6 +117,12 @@ fn VersionsField(label: String, rows: RwSignal<Vec<VersionRow>>) -> impl IntoVie
                     >"\u{00D7}"</button>
                 </div>
             </For>
+            {move || rows.with(|rows| rows.iter().all(|r| r.url.with(|u| u.trim().is_empty()))).then(|| view! {
+                <small class="form-hint">
+                    {t().form_video_host_prompt}
+                    <a href=VIDEO_HOST_UPLOAD target="_blank" rel="noopener">{t().form_video_host_link}</a>
+                </small>
+            })}
             <button
                 type="button"
                 class="version-add"

@@ -232,6 +232,10 @@
   font-size: 12px;
   font-weight: 400;
 }
+.form-hint a {
+  color: var(--purple);
+  font-weight: 600;
+}
 .version-row {
   display: flex;
   gap: 4px;
